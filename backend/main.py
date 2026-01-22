@@ -50,6 +50,9 @@ def on_startup():
 from pywebpush import webpush, WebPushException
 import json
 import os
+from dotenv import load_dotenv
+
+load_dotenv() # Загрузка переменных из .env
 
 # VAPID ключи (должны быть в .env)
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "your-private-key")
