@@ -9,13 +9,19 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Prozorro Monitor",
   description: "MVP поиск тендеров",
-  manifest: "/manifest.json",
+  manifest: "/prozorro/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
     title: "Tenders",
   },
 };
+// ...
+    <html lang="ru">
+      <head>
+        <link rel="apple-touch-icon" href="/prozorro/icons/icon-192x192.png" />
+      </head>
+
 
 export const viewport: Viewport = {
   width: "device-width",

@@ -29,7 +29,7 @@ const PushManager = () => {
   const registerAndSubscribe = async () => {
     try {
       // 1. Регистрация SW
-      const registration = await navigator.serviceWorker.register("/sw.js");
+      const registration = await navigator.serviceWorker.register("/prozorro/sw.js", { scope: "/prozorro/" });
       console.log("Service Worker registered");
 
       // 2. Ожидание активации (чтобы pushManager был доступен)
