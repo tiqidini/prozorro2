@@ -68,7 +68,8 @@ class ProzorroApp {
 
     async fetchTenders(params = '') {
         try {
-            const response = await fetch(`${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&${params}`, {
+            // Увеличиваем лимит до 1000 для более широкого поиска
+            const response = await fetch(`${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}`, {
                 mode: 'cors'
             });
             const data = await response.json();
@@ -95,25 +96,36 @@ class ProzorroApp {
         this.searchResults.innerHTML = '<div class="loader"></div>';
         this.switchTab('search');
 
-        // Simple search logic: fetch latest and filter locally (Public API limitations)
-        // In a real app with more resources, we'd use a dedicated search endpoint.
+        // Simple search logic: fetch latest 1000 items and filter locally
         const tenders = await this.fetchTenders();
-        const filtered = tenders.filter(t =>
-            t.title.toLowerCase().includes(query.toLowerCase()) ||
-            (t.procuringEntity && t.procuringEntity.name.toLowerCase().includes(query.toLowerCase())) ||
-            (t.procuringEntity && t.procuringEntity.identifier.id.includes(query))
-        );
+        const filtered = tenders.filter(t => {
+            const titleMatch = t.title && t.title.toLowerCase().includes(query.toLowerCase());
+            const idMatch = t.tenderID && t.tenderID.toLowerCase().includes(query.toLowerCase());
+            const entityNameMatch = t.procuringEntity && t.procuringEntity.name && t.procuringEntity.name.toLowerCase().includes(query.toLowerCase());
+            const edrpouMatch = t.procuringEntity && t.procuringEntity.identifier && t.procuringEntity.identifier.id && t.procuringEntity.identifier.id.toString().includes(query);
 
-        this.renderTenders(filtered, this.searchResults);
+            return titleMatch || idMatch || entityNameMatch || edrpouMatch;
+        });
+
+        this.renderTenders(filtered, this.searchResults, tenders.length);
     }
 
-    renderTenders(tenders, container) {
+    renderTenders(tenders, container, searchedCount = 0) {
         if (!tenders || tenders.length === 0) {
-            container.innerHTML = '<p class="empty-state">Нічого не знайдено</p>';
+            container.innerHTML = `
+                <p class="empty-state">Нічого не знайдено</p>
+                <div style="text-align:center; font-size:0.8rem; color:var(--text-secondary); margin-top:10px;">
+                    Перевірено останніх ${searchedCount} тендерів. Спробуйте уточнити запит.
+                </div>
+            `;
             return;
         }
 
-        container.innerHTML = tenders.map(tender => `
+        container.innerHTML = `
+            <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:12px; padding-left:4px;">
+                Знайдено ${tenders.length} тендерів (серед останніх ${searchedCount})
+            </div>
+            ` + tenders.map(tender => `
             <div class="tender-card glass" onclick="window.open('https://prozorro.gov.ua/tender/${tender.tenderID}', '_blank')">
                 <span class="status">${this.formatStatus(tender.status)}</span>
                 <div class="title">${tender.title}</div>
