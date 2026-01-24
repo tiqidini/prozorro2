@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-sqlalchemy
-sqlmodel
-httpx
-pywebpush
-apscheduler
-python-dotenv
-pydantic
