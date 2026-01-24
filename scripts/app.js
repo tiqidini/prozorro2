@@ -66,18 +66,20 @@ class ProzorroApp {
         this.tabs.forEach(t => t.classList.toggle('active', t.id === `tab-${tabId}`));
     }
 
-    async fetchTenders(params = '') {
+    async fetchRaw(params = '') {
         try {
-            // Увеличиваем лимит до 1000 для более широкого поиска
-            const response = await fetch(`${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}`, {
-                mode: 'cors'
-            });
-            const data = await response.json();
-            return data.data;
+            const url = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}`;
+            const response = await fetch(url, { mode: 'cors' });
+            return await response.json();
         } catch (error) {
             console.error('Fetch error:', error);
-            return [];
+            return null;
         }
+    }
+
+    async fetchTenders(params = '') {
+        const data = await this.fetchRaw(params);
+        return data ? data.data : [];
     }
 
     async loadFeed() {
@@ -93,12 +95,30 @@ class ProzorroApp {
         const query = this.searchInput.value.trim();
         if (!query) return;
 
-        this.searchResults.innerHTML = '<div class="loader"></div>';
+        this.searchResults.innerHTML = '<div class="loader"></div><div id="search-progress" style="text-align:center; font-size:0.8rem; color:var(--text-secondary);">Пошук...</div>';
         this.switchTab('search');
 
-        // Simple search logic: fetch latest 1000 items and filter locally
-        const tenders = await this.fetchTenders();
-        const filtered = tenders.filter(t => {
+        let allTenders = [];
+        let offset = '';
+        const progressEl = document.getElementById('search-progress');
+
+        // Fetch up to 5 pages (5000 tenders) for deep search
+        for (let i = 0; i < 5; i++) {
+            if (progressEl) progressEl.innerText = `Пошук серед останніх ${(i + 1) * 1000} тендерів...`;
+
+            const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
+            if (!result || !result.data || result.data.length === 0) break;
+
+            allTenders = allTenders.concat(result.data);
+
+            if (result.next_page && result.next_page.offset) {
+                offset = result.next_page.offset;
+            } else {
+                break;
+            }
+        }
+
+        const filtered = allTenders.filter(t => {
             const titleMatch = t.title && t.title.toLowerCase().includes(query.toLowerCase());
             const idMatch = t.tenderID && t.tenderID.toLowerCase().includes(query.toLowerCase());
             const entityNameMatch = t.procuringEntity && t.procuringEntity.name && t.procuringEntity.name.toLowerCase().includes(query.toLowerCase());
@@ -107,7 +127,7 @@ class ProzorroApp {
             return titleMatch || idMatch || entityNameMatch || edrpouMatch;
         });
 
-        this.renderTenders(filtered, this.searchResults, tenders.length);
+        this.renderTenders(filtered, this.searchResults, allTenders.length);
     }
 
     renderTenders(tenders, container, searchedCount = 0) {
@@ -157,12 +177,15 @@ class ProzorroApp {
         `).join('');
     }
 
-    addToWatchlist(code, name) {
+    async addToWatchlist(code, name) {
         if (!this.watchlist.find(i => i.code === code)) {
             this.watchlist.push({ code, name });
             localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
             this.renderWatchlist();
-            this.checkNewTendersForCustomer(code);
+
+            // Initial deep check for this customer (last 3000 tenders)
+            await this.checkNewTendersForCustomer(code, 3);
+            this.switchTab('watchlist');
         }
     }
 
@@ -193,14 +216,30 @@ class ProzorroApp {
     }
 
     // Monitoring logic
-    async checkNewTendersForCustomer(code) {
-        console.log(`Checking new tenders for ${code}...`);
-        // Simulating finding new tenders
-        const tenders = await this.fetchTenders();
-        const customerTenders = tenders.filter(t => t.procuringEntity?.identifier?.id === code);
+    async checkNewTendersForCustomer(code, depth = 1) {
+        console.log(`Checking tenders for ${code} with depth ${depth}...`);
+
+        let allTenders = [];
+        let offset = '';
+
+        for (let i = 0; i < depth; i++) {
+            const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
+            if (!result || !result.data || result.data.length === 0) break;
+
+            allTenders = allTenders.concat(result.data);
+            if (result.next_page && result.next_page.offset) {
+                offset = result.next_page.offset;
+            } else {
+                break;
+            }
+        }
+
+        const customerTenders = allTenders.filter(t => t.procuringEntity?.identifier?.id === code);
 
         if (customerTenders.length > 0) {
+            console.log(`Found ${customerTenders.length} tenders for ${code}`);
             this.updateBadge(customerTenders.length);
+            // Optionally show local notification here
         }
     }
 
