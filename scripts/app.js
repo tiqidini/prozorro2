@@ -59,6 +59,26 @@ class ProzorroApp {
 
         // Refresh
         document.getElementById('refresh-btn').addEventListener('click', () => this.loadFeed());
+
+        // Cache reset
+        const clearBtn = document.getElementById('clear-cache-btn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(registrations => {
+                        for (let registration of registrations) {
+                            registration.unregister();
+                        }
+                        caches.keys().then(names => {
+                            for (let name of names) caches.delete(name);
+                            window.location.reload(true);
+                        });
+                    });
+                } else {
+                    window.location.reload(true);
+                }
+            });
+        }
     }
 
     switchTab(tabId) {
