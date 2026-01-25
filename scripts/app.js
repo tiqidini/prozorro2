@@ -112,38 +112,35 @@ class ProzorroApp {
         const query = this.searchInput.value.trim();
         if (!query) return;
 
-        this.searchResults.innerHTML = '<div class="loader"></div><div id="search-progress" style="text-align:center; font-size:0.8rem; color:var(--text-secondary);">Шукаємо...</div>';
+        this.searchResults.innerHTML = '<div class="loader"></div><div id="search-progress" style="text-align:center; font-size:0.8rem; color:var(--text-secondary);">Шукаємо у базі Prozorro...</div>';
         this.switchTab('search');
 
-        // Logic: if query is EDRPOU (8 digits), search via API filter
-        // Otherwise, search latest 5000 and provide link to Prozorro
         let tenders = [];
         let searchedCount = 0;
 
-        if (/^\d{8}$/.test(query)) {
-            const result = await this.fetchRaw(`procuringEntity.identifier.id=${query}`);
-            tenders = result ? result.data : [];
-            searchedCount = tenders.length;
-        } else {
-            let allTenders = [];
-            let offset = '';
-            const progressEl = document.getElementById('search-progress');
+        try {
+            // Priority 1: Search via API 'q' parameter (works for keywords and names)
+            const qResult = await this.fetchRaw(`q=${encodeURIComponent(query)}`);
+            tenders = qResult ? qResult.data : [];
 
-            for (let i = 0; i < 5; i++) {
-                if (progressEl) progressEl.innerText = `Пошук серед останніх ${(i + 1) * 1000} тендерів...`;
-                const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
-                if (!result || !result.data || result.data.length === 0) break;
-                allTenders = allTenders.concat(result.data);
-                if (result.next_page && result.next_page.offset) offset = result.next_page.offset;
-                else break;
+            // Priority 2: If query is EDRPOU (8 digits), also try identifier search
+            if (/^\d{8}$/.test(query)) {
+                const idResult = await this.fetchRaw(`procuringEntity.identifier.id=${query}`);
+                const idTenders = idResult ? idResult.data : [];
+
+                // Merge and deduplicate
+                const combined = [...idTenders, ...tenders];
+                const seen = new Set();
+                tenders = combined.filter(t => {
+                    const isNew = !seen.has(t.tenderID);
+                    seen.add(t.tenderID);
+                    return isNew;
+                });
             }
 
-            tenders = allTenders.filter(t =>
-                (t.title && t.title.toLowerCase().includes(query.toLowerCase())) ||
-                (t.tenderID && t.tenderID.toLowerCase().includes(query.toLowerCase())) ||
-                (t.procuringEntity && t.procuringEntity.name && t.procuringEntity.name.toLowerCase().includes(query.toLowerCase()))
-            );
-            searchedCount = allTenders.length;
+            searchedCount = tenders.length;
+        } catch (error) {
+            console.error('Search error:', error);
         }
 
         this.renderTenders(tenders, this.searchResults, searchedCount, query);
@@ -258,20 +255,15 @@ class ProzorroApp {
             const result = await this.fetchRaw(`procuringEntity.identifier.id=${code}`);
             allTenders = result ? result.data : [];
         } else {
-            // Otherwise use offset deep search
-            let offset = '';
-            for (let i = 0; i < depth; i++) {
-                const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
-                if (!result || !result.data || result.data.length === 0) break;
-                allTenders = allTenders.concat(result.data);
-                if (result.next_page && result.next_page.offset) offset = result.next_page.offset;
-                else break;
-            }
+            // Use global search by name/keyword
+            const result = await this.fetchRaw(`q=${encodeURIComponent(code)}`);
+            allTenders = result ? result.data : [];
         }
 
         const customerTenders = allTenders.filter(t =>
             t.procuringEntity?.identifier?.id === code ||
-            (t.procuringEntity?.identifier?.id && t.procuringEntity.identifier.id.toString() === code)
+            (t.procuringEntity?.identifier?.id && t.procuringEntity.identifier.id.toString() === code) ||
+            (t.procuringEntity?.name && t.procuringEntity.name.toLowerCase().includes(code.toLowerCase()))
         );
 
         if (customerTenders.length > 0) {
