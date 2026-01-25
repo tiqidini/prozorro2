@@ -104,66 +104,78 @@ class ProzorroApp {
 
     async loadFeed() {
         this.tendersList.innerHTML = '<div class="loader"></div>';
-
-        // If we have watchlist, we might want to filter, 
-        // but for general feed we just show latest.
         const tenders = await this.fetchTenders();
-        this.renderTenders(tenders, this.tendersList);
+        this.renderTenders(tenders, this.tendersList, tenders.length, '');
     }
 
     async handleSearch() {
         const query = this.searchInput.value.trim();
         if (!query) return;
 
-        this.searchResults.innerHTML = '<div class="loader"></div><div id="search-progress" style="text-align:center; font-size:0.8rem; color:var(--text-secondary);">Пошук...</div>';
+        this.searchResults.innerHTML = '<div class="loader"></div><div id="search-progress" style="text-align:center; font-size:0.8rem; color:var(--text-secondary);">Шукаємо...</div>';
         this.switchTab('search');
 
-        let allTenders = [];
-        let offset = '';
-        const progressEl = document.getElementById('search-progress');
+        // Logic: if query is EDRPOU (8 digits), search via API filter
+        // Otherwise, search latest 5000 and provide link to Prozorro
+        let tenders = [];
+        let searchedCount = 0;
 
-        // Fetch up to 5 pages (5000 tenders) for deep search
-        for (let i = 0; i < 5; i++) {
-            if (progressEl) progressEl.innerText = `Пошук серед останніх ${(i + 1) * 1000} тендерів...`;
+        if (/^\d{8}$/.test(query)) {
+            const result = await this.fetchRaw(`procuringEntity.identifier.id=${query}`);
+            tenders = result ? result.data : [];
+            searchedCount = tenders.length;
+        } else {
+            let allTenders = [];
+            let offset = '';
+            const progressEl = document.getElementById('search-progress');
 
-            const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
-            if (!result || !result.data || result.data.length === 0) break;
-
-            allTenders = allTenders.concat(result.data);
-
-            if (result.next_page && result.next_page.offset) {
-                offset = result.next_page.offset;
-            } else {
-                break;
+            for (let i = 0; i < 5; i++) {
+                if (progressEl) progressEl.innerText = `Пошук серед останніх ${(i + 1) * 1000} тендерів...`;
+                const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
+                if (!result || !result.data || result.data.length === 0) break;
+                allTenders = allTenders.concat(result.data);
+                if (result.next_page && result.next_page.offset) offset = result.next_page.offset;
+                else break;
             }
+
+            tenders = allTenders.filter(t =>
+                (t.title && t.title.toLowerCase().includes(query.toLowerCase())) ||
+                (t.tenderID && t.tenderID.toLowerCase().includes(query.toLowerCase())) ||
+                (t.procuringEntity && t.procuringEntity.name && t.procuringEntity.name.toLowerCase().includes(query.toLowerCase()))
+            );
+            searchedCount = allTenders.length;
         }
 
-        const filtered = allTenders.filter(t => {
-            const titleMatch = t.title && t.title.toLowerCase().includes(query.toLowerCase());
-            const idMatch = t.tenderID && t.tenderID.toLowerCase().includes(query.toLowerCase());
-            const entityNameMatch = t.procuringEntity && t.procuringEntity.name && t.procuringEntity.name.toLowerCase().includes(query.toLowerCase());
-            const edrpouMatch = t.procuringEntity && t.procuringEntity.identifier && t.procuringEntity.identifier.id && t.procuringEntity.identifier.id.toString().includes(query);
-
-            return titleMatch || idMatch || entityNameMatch || edrpouMatch;
-        });
-
-        this.renderTenders(filtered, this.searchResults, allTenders.length);
+        this.renderTenders(tenders, this.searchResults, searchedCount, query);
     }
 
-    renderTenders(tenders, container, searchedCount = 0) {
+    renderTenders(tenders, container, searchedCount = 0, query = '') {
+        const isEdrpou = /^\d{8}$/.test(query);
+        const externalSearchUrl = isEdrpou
+            ? `https://prozorro.gov.ua/uk/search/tender?buyer=${query}`
+            : `https://prozorro.gov.ua/uk/search/tender?q=${encodeURIComponent(query)}`;
+
         if (!tenders || tenders.length === 0) {
             container.innerHTML = `
-                <p class="empty-state">Нічого не знайдено</p>
-                <div style="text-align:center; font-size:0.8rem; color:var(--text-secondary); margin-top:10px;">
-                    Перевірено останніх ${searchedCount} тендерів. Спробуйте уточнити запит.
+                <p class="empty-state">Нічого не знайдено в додатку</p>
+                <div style="text-align:center; padding: 20px;">
+                    <a href="${externalSearchUrl}" target="_blank" class="primary-btn" style="display:inline-block; text-decoration:none; width:auto; padding:12px 24px;">
+                        Шукати на Prozorro.gov.ua
+                    </a>
+                    <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:15px;">
+                        В базі додатку відображаються тільки найновіші тендери. Для повного пошуку використовуйте офіційний портал.
+                    </p>
                 </div>
             `;
             return;
         }
 
         container.innerHTML = `
-            <div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:12px; padding-left:4px;">
-                Знайдено ${tenders.length} тендерів (серед останніх ${searchedCount})
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
+                <div style="font-size:0.8rem; color:var(--text-secondary);">
+                    Знайдено ${tenders.length} тендерів
+                </div>
+                <a href="${externalSearchUrl}" target="_blank" style="font-size:0.8rem; color:var(--primary); text-decoration:none;">Повний пошук →</a>
             </div>
             ` + tenders.map(tender => `
             <div class="tender-card glass" onclick="window.open('https://prozorro.gov.ua/tender/${tender.tenderID}', '_blank')">
@@ -237,29 +249,34 @@ class ProzorroApp {
 
     // Monitoring logic
     async checkNewTendersForCustomer(code, depth = 1) {
-        console.log(`Checking tenders for ${code} with depth ${depth}...`);
+        console.log(`Checking tenders for ${code}...`);
 
         let allTenders = [];
-        let offset = '';
 
-        for (let i = 0; i < depth; i++) {
-            const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
-            if (!result || !result.data || result.data.length === 0) break;
-
-            allTenders = allTenders.concat(result.data);
-            if (result.next_page && result.next_page.offset) {
-                offset = result.next_page.offset;
-            } else {
-                break;
+        // If code is EDRPOU, use direct API filter - find EVERYTHING for this entity
+        if (/^\d{8}$/.test(code)) {
+            const result = await this.fetchRaw(`procuringEntity.identifier.id=${code}`);
+            allTenders = result ? result.data : [];
+        } else {
+            // Otherwise use offset deep search
+            let offset = '';
+            for (let i = 0; i < depth; i++) {
+                const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
+                if (!result || !result.data || result.data.length === 0) break;
+                allTenders = allTenders.concat(result.data);
+                if (result.next_page && result.next_page.offset) offset = result.next_page.offset;
+                else break;
             }
         }
 
-        const customerTenders = allTenders.filter(t => t.procuringEntity?.identifier?.id === code);
+        const customerTenders = allTenders.filter(t =>
+            t.procuringEntity?.identifier?.id === code ||
+            (t.procuringEntity?.identifier?.id && t.procuringEntity.identifier.id.toString() === code)
+        );
 
         if (customerTenders.length > 0) {
             console.log(`Found ${customerTenders.length} tenders for ${code}`);
             this.updateBadge(customerTenders.length);
-            // Optionally show local notification here
         }
     }
 
