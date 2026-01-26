@@ -31,6 +31,32 @@ class ProzorroApp {
         this.progressText = document.getElementById('search-progress-text');
     }
 
+    removeFromWatchlist(code) {
+        this.watchlist = this.watchlist.filter(i => i.code !== code);
+        localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
+        this.renderWatchlist();
+    }
+
+    formatStatus(status) {
+        const statuses = {
+            'active.enquiries': 'Період уточнень',
+            'active.tendering': 'Прийом пропозицій',
+            'active.pre-qualification': 'Прекваліфікація',
+            'active.auction': 'Аукціон',
+            'active.qualification': 'Кваліфікація',
+            'active.awarded': 'Пропозиції розглянуті',
+            'complete': 'Завершено',
+            'cancelled': 'Відмінено',
+            'unsuccessful': 'Тендер не відбувся'
+        };
+        return statuses[status] || status;
+    }
+
+    formatCurrency(value) {
+        if (!value) return '0.00 грн';
+        return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: value.currency || 'UAH' }).format(value.amount);
+    }
+
     initEvents() {
         // Tab switching
         this.navItems.forEach(item => {
@@ -70,10 +96,21 @@ class ProzorroApp {
         // Military Preset
         const milBtn = document.getElementById('add-military-preset-btn');
         if (milBtn) {
-            milBtn.addEventListener('click', () => {
+            milBtn.addEventListener('click', async () => {
                 const codes = ["26613094", "08532943", "08151359", "08526931", "07666794", "08388245", "07899653", "24981089", "08113718", "08540730", "07944268", "07893124", "24983059", "08140309", "08160039", "24979158", "08379186", "08032962", "14304637", "07732858", "08196534", "07967633", "08164155", "08027576", "07644539"];
-                codes.forEach(c => this.addToWatchlist(c, 'Військова частина/Орган'));
-                alert('Додано 25 організацій до списку стеження');
+                
+                milBtn.disabled = true;
+                milBtn.innerText = 'Додавання...';
+                
+                for (const c of codes) {
+                    await this.addToWatchlist(c, 'Військова частина/Орган');
+                }
+                
+                await this.checkNewTendersGlobal(3);
+                
+                milBtn.disabled = false;
+                milBtn.innerText = '+ Військові частини';
+                this.switchTab('watchlist');
             });
         }
 
@@ -104,18 +141,25 @@ class ProzorroApp {
     }
 
     async fetchRaw(params = '') {
-        try {
-            // Using corsproxy.io to bypass CORS - more stable than allorigins
-            const targetUrl = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
-            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-            
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.json();
-        } catch (error) {
-            console.error('Fetch error:', error);
-            return null;
+        const targetUrl = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
+        
+        const proxies = [
+            url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            url => `https://api.codetabs.com/v1/proxy?url=${encodeURIComponent(url)}`
+        ];
+
+        for (const proxyFn of proxies) {
+            try {
+                const response = await fetch(proxyFn(targetUrl));
+                if (response.ok) {
+                    const text = await response.text();
+                    return JSON.parse(text);
+                }
+            } catch (e) {
+                console.warn("Proxy failed, trying next...");
+            }
         }
+        return null;
     }
 
     updateProgress(percent, text) {
@@ -290,64 +334,31 @@ class ProzorroApp {
             this.watchlist.push({ code, name });
             localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
             this.renderWatchlist();
-
-            // Initial deep check for this customer (last 3000 tenders)
-            await this.checkNewTendersForCustomer(code, 3);
-            this.switchTab('watchlist');
         }
     }
 
-    removeFromWatchlist(code) {
-        this.watchlist = this.watchlist.filter(i => i.code !== code);
-        localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
-        this.renderWatchlist();
-    }
-
-    formatStatus(status) {
-        const statuses = {
-            'active.enquiries': 'Період уточнень',
-            'active.tendering': 'Прийом пропозицій',
-            'active.pre-qualification': 'Прекваліфікація',
-            'active.auction': 'Аукціон',
-            'active.qualification': 'Кваліфікація',
-            'active.awarded': 'Пропозиції розглянуті',
-            'complete': 'Завершено',
-            'cancelled': 'Відмінено',
-            'unsuccessful': 'Тендер не відбувся'
-        };
-        return statuses[status] || status;
-    }
-
-    formatCurrency(value) {
-        if (!value) return '0.00 грн';
-        return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: value.currency || 'UAH' }).format(value.amount);
-    }
-
-    // Monitoring logic (Watchlist)
-    async checkNewTendersForCustomer(code, depth = 1) {
-        console.log(`Checking tenders for ${code}...`);
+    // New optimized monitoring logic: scan once for all customers
+    async checkNewTendersGlobal(depth = 1) {
+        if (this.watchlist.length === 0) return;
         
-        try {
-            let offset = '';
-            let matches = [];
-            
-            // Scan batches to find matches
-            for (let i = 0; i < depth; i++) {
-                const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
-                if (result && result.data) {
-                    const batchMatches = this.applyStrictFilter(result.data, code, 'all');
-                    matches = [...matches, ...batchMatches];
-                    offset = result.next_page?.offset || '';
-                    if (!offset) break;
-                } else break;
-            }
+        console.log(`Global check for ${this.watchlist.length} customers...`);
+        const codes = this.watchlist.map(i => i.code);
+        let offset = '';
+        let totalMatches = 0;
 
-            if (matches.length > 0) {
-                console.log(`Found ${matches.length} matches for ${code}`);
-                this.updateBadge(matches.length);
-            }
-        } catch (e) {
-            console.error(`Monitor error for ${code}:`, e);
+        for (let i = 0; i < depth; i++) {
+            const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
+            if (result && result.data) {
+                const matches = this.applyStrictFilter(result.data, codes, 'all');
+                totalMatches += matches.length;
+                offset = result.next_page?.offset || '';
+                if (!offset) break;
+            } else break;
+        }
+
+        if (totalMatches > 0) {
+            console.log(`Global check found ${totalMatches} total matches`);
+            this.updateBadge(totalMatches);
         }
     }
 
@@ -358,11 +369,7 @@ class ProzorroApp {
     }
 
     checkNewTendersInterval() {
-        setInterval(() => {
-            if (this.watchlist.length > 0) {
-                this.watchlist.forEach(item => this.checkNewTendersForCustomer(item.code));
-            }
-        }, 1000 * 60 * 15); // Check every 15 mins
+        setInterval(() => this.checkNewTendersGlobal(1), 1000 * 60 * 15);
     }
 }
 
