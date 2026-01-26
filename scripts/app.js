@@ -95,15 +95,25 @@ class ProzorroApp {
 
     async fetchRaw(params = '') {
         try {
-            // Cache busting with _v parameter and newest first with descending=1
-            const url = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}&_v=${Date.now()}`;
-            const response = await fetch(url, { mode: 'cors' });
+            // Using AllOrigins proxy to bypass CORS on GitHub Pages
+            const targetUrl = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+            
+            const response = await fetch(proxyUrl);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.json();
+            const data = await response.json();
+            
+            // AllOrigins returns the content as a string in 'contents' field
+            return JSON.parse(data.contents);
         } catch (error) {
             console.error('Fetch error:', error);
             return null;
         }
+    }
+
+    updateProgress(percent, text) {
+        if (this.progressFill) this.progressFill.style.width = `${percent}%`;
+        if (this.progressText) this.progressText.innerText = text;
     }
 
     async fetchTenders(params = '') {
