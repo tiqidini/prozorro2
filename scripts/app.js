@@ -22,6 +22,13 @@ class ProzorroApp {
         this.modal = document.getElementById('modal-container');
         this.searchBtn = document.getElementById('search-btn');
         this.searchInput = document.getElementById('search-input');
+
+        // New search elements
+        this.filterStatus = document.getElementById('filter-status');
+        this.filterDepth = document.getElementById('filter-depth');
+        this.progressContainer = document.getElementById('search-progress-container');
+        this.progressFill = document.getElementById('search-progress-fill');
+        this.progressText = document.getElementById('search-progress-text');
     }
 
     initEvents() {
@@ -88,8 +95,10 @@ class ProzorroApp {
 
     async fetchRaw(params = '') {
         try {
-            const url = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}`;
+            // Cache busting with _v parameter and newest first with descending=1
+            const url = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}&_v=${Date.now()}`;
             const response = await fetch(url, { mode: 'cors' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();
         } catch (error) {
             console.error('Fetch error:', error);
@@ -99,7 +108,7 @@ class ProzorroApp {
 
     async fetchTenders(params = '') {
         const data = await this.fetchRaw(params);
-        return data ? data.data : [];
+        return data && data.data ? data.data : [];
     }
 
     async loadFeed() {
@@ -112,38 +121,89 @@ class ProzorroApp {
         const query = this.searchInput.value.trim();
         if (!query) return;
 
-        this.searchResults.innerHTML = '<div class="loader"></div><div id="search-progress" style="text-align:center; font-size:0.8rem; color:var(--text-secondary);">Шукаємо у базі Prozorro...</div>';
         this.switchTab('search');
+        this.searchResults.innerHTML = '<div class="loader"></div>';
+        this.progressContainer.classList.remove('hidden');
+        this.updateProgress(5, 'Ініціалізація пошуку...');
 
+        const statusFilter = this.filterStatus.value;
+        const maxTenders = parseInt(this.filterDepth.value);
         let tenders = [];
-        let searchedCount = 0;
 
         try {
-            // Priority 1: Search via API 'q' parameter (works for keywords and names)
-            const qResult = await this.fetchRaw(`q=${encodeURIComponent(query)}`);
-            tenders = qResult ? qResult.data : [];
+            // Priority 1: Exact Tender ID Search (UA-202...)
+            if (/^UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]$/i.test(query)) {
+                this.updateProgress(50, 'Пошук за ID тендера...');
+                const result = await this.fetchRaw(`tenderID=${query}`);
+                tenders = result ? result.data.filter(t => t.tenderID.toLowerCase() === query.toLowerCase()) : [];
+                this.updateProgress(100, 'Завершено');
+            } 
+            // Priority 2: Deep Scan (Keywords or EDRPOU)
+            else {
+                let offset = '';
+                const pageSize = 1000;
+                const pages = Math.ceil(maxTenders / pageSize);
+                const isEdrpou = /^\d{8}$/.test(query);
 
-            // Priority 2: If query is EDRPOU (8 digits), also try identifier search
-            if (/^\d{8}$/.test(query)) {
-                const idResult = await this.fetchRaw(`procuringEntity.identifier.id=${query}`);
-                const idTenders = idResult ? idResult.data : [];
+                for (let i = 0; i < pages; i++) {
+                    const progress = Math.round((i / pages) * 90) + 5;
+                    this.updateProgress(progress, `Сканування бази... (${(i + 1) * pageSize} тендерів)`);
 
-                // Merge and deduplicate
-                const combined = [...idTenders, ...tenders];
-                const seen = new Set();
-                tenders = combined.filter(t => {
-                    const isNew = !seen.has(t.tenderID);
-                    seen.add(t.tenderID);
-                    return isNew;
-                });
+                    // For EDRPOU we don't use 'q' parameter as it often fails/ignores on API side
+                    // Instead we scan latest tenders and filter precisely on client
+                    const params = `${offset ? `offset=${offset}` : ''}`;
+                    const result = await this.fetchRaw(params);
+
+                    if (result && result.data && result.data.length > 0) {
+                        const batchMatches = this.applyStrictFilter(result.data, query, statusFilter);
+                        tenders = [...tenders, ...batchMatches];
+                        
+                        offset = result.next_page?.offset || '';
+                        if (!offset) break;
+                        
+                        // If we found enough results for a specific EDRPOU, we can stop early
+                        if (isEdrpou && tenders.length >= 50) break;
+                    } else {
+                        break;
+                    }
+                }
+
+                this.updateProgress(95, 'Сортування...');
+                tenders = tenders.sort((a, b) => new Date(b.dateModified) - new Date(a.dateModified));
+                this.updateProgress(100, 'Завершено');
             }
-
-            searchedCount = tenders.length;
         } catch (error) {
             console.error('Search error:', error);
+            this.updateProgress(100, 'Помилка');
         }
 
-        this.renderTenders(tenders, this.searchResults, searchedCount, query);
+        setTimeout(() => this.progressContainer.classList.add('hidden'), 800);
+        this.renderTenders(tenders, this.searchResults, tenders.length, query);
+    }
+
+    applyStrictFilter(tenders, query, statusFilter) {
+        const q = query.toLowerCase();
+        const isEdrpou = /^\d{8}$/.test(query);
+
+        return tenders.filter(t => {
+            // 1. Status check
+            if (statusFilter === 'active') {
+                const activeStatuses = ['active.enquiries', 'active.tendering', 'active.pre-qualification', 'active.auction', 'active.qualification', 'active.awarded'];
+                if (!activeStatuses.includes(t.status)) return false;
+            } else if (statusFilter === 'complete' && t.status !== 'complete') {
+                return false;
+            }
+
+            // 2. Content check (STRICT)
+            if (isEdrpou) {
+                return t.procuringEntity?.identifier?.id === query;
+            } else {
+                const inTitle = (t.title || '').toLowerCase().includes(q);
+                const inEntity = (t.procuringEntity?.name || '').toLowerCase().includes(q);
+                const inId = (t.tenderID || '').toLowerCase().includes(q);
+                return inTitle || inEntity || inId;
+            }
+        });
     }
 
     renderTenders(tenders, container, searchedCount = 0, query = '') {
@@ -244,31 +304,31 @@ class ProzorroApp {
         return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: value.currency || 'UAH' }).format(value.amount);
     }
 
-    // Monitoring logic
+    // Monitoring logic (Watchlist)
     async checkNewTendersForCustomer(code, depth = 1) {
         console.log(`Checking tenders for ${code}...`);
+        
+        try {
+            let offset = '';
+            let matches = [];
+            
+            // Scan batches to find matches
+            for (let i = 0; i < depth; i++) {
+                const result = await this.fetchRaw(offset ? `offset=${offset}` : '');
+                if (result && result.data) {
+                    const batchMatches = this.applyStrictFilter(result.data, code, 'all');
+                    matches = [...matches, ...batchMatches];
+                    offset = result.next_page?.offset || '';
+                    if (!offset) break;
+                } else break;
+            }
 
-        let allTenders = [];
-
-        // If code is EDRPOU, use direct API filter - find EVERYTHING for this entity
-        if (/^\d{8}$/.test(code)) {
-            const result = await this.fetchRaw(`procuringEntity.identifier.id=${code}`);
-            allTenders = result ? result.data : [];
-        } else {
-            // Use global search by name/keyword
-            const result = await this.fetchRaw(`q=${encodeURIComponent(code)}`);
-            allTenders = result ? result.data : [];
-        }
-
-        const customerTenders = allTenders.filter(t =>
-            t.procuringEntity?.identifier?.id === code ||
-            (t.procuringEntity?.identifier?.id && t.procuringEntity.identifier.id.toString() === code) ||
-            (t.procuringEntity?.name && t.procuringEntity.name.toLowerCase().includes(code.toLowerCase()))
-        );
-
-        if (customerTenders.length > 0) {
-            console.log(`Found ${customerTenders.length} tenders for ${code}`);
-            this.updateBadge(customerTenders.length);
+            if (matches.length > 0) {
+                console.log(`Found ${matches.length} matches for ${code}`);
+                this.updateBadge(matches.length);
+            }
+        } catch (e) {
+            console.error(`Monitor error for ${code}:`, e);
         }
     }
 

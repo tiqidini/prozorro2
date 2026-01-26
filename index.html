@@ -58,8 +58,36 @@
             <!-- Search Tab -->
             <section id="tab-search" class="tab-content">
                 <div class="search-container glass">
-                    <input type="text" id="search-input" placeholder="Пошук за назвою або ЄДРПОУ...">
-                    <button id="search-btn">Знайти</button>
+                    <div class="search-input-group">
+                        <input type="text" id="search-input" placeholder="Пошук за назвою або ЄДРПОУ...">
+                        <button id="search-btn">Знайти</button>
+                    </div>
+
+                    <div class="search-filters">
+                        <div class="filter-group">
+                            <label>Статус:</label>
+                            <select id="filter-status">
+                                <option value="all">Всі статуси</option>
+                                <option value="active">Активні</option>
+                                <option value="complete">Завершені</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Глибина:</label>
+                            <select id="filter-depth">
+                                <option value="1000">1000 (швидко)</option>
+                                <option value="3000" selected>3000 (нормально)</option>
+                                <option value="5000">5000 (глибоко)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="search-progress-container" class="hidden">
+                        <div class="progress-bar">
+                            <div id="search-progress-fill"></div>
+                        </div>
+                        <div id="search-progress-text">Підготовка...</div>
+                    </div>
                 </div>
                 <div id="search-results" class="scroll-area">
                     <p class="empty-state">Введіть запит для пошуку</p>
