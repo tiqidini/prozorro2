@@ -67,6 +67,16 @@ class ProzorroApp {
         // Refresh
         document.getElementById('refresh-btn').addEventListener('click', () => this.loadFeed());
 
+        // Military Preset
+        const milBtn = document.getElementById('add-military-preset-btn');
+        if (milBtn) {
+            milBtn.addEventListener('click', () => {
+                const codes = ["26613094", "08532943", "08151359", "08526931", "07666794", "08388245", "07899653", "24981089", "08113718", "08540730", "07944268", "07893124", "24983059", "08140309", "08160039", "24979158", "08379186", "08032962", "14304637", "07732858", "08196534", "07967633", "08164155", "08027576", "07644539"];
+                codes.forEach(c => this.addToWatchlist(c, 'Військова частина/Орган'));
+                alert('Додано 25 організацій до списку стеження');
+            });
+        }
+
         // Cache reset
         const clearBtn = document.getElementById('clear-cache-btn');
         if (clearBtn) {
@@ -138,60 +148,54 @@ class ProzorroApp {
         let tenders = [];
 
         try {
-            // Priority 1: Exact Tender ID Search (UA-202...)
-            if (/^UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]$/i.test(query)) {
+            // Split query into multiple terms (support for multiple EDRPOUs)
+            const terms = query.split(/[\s,]+/).filter(t => t.length > 0);
+            const isMultiEdrpou = terms.every(t => /^\d{8}$/.test(t));
+
+            // Priority 1: Exact Tender ID Search
+            if (terms.length === 1 && /^UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]$/i.test(terms[0])) {
                 this.updateProgress(50, 'Пошук за ID тендера...');
-                const result = await this.fetchRaw(`tenderID=${query}`);
-                tenders = result ? result.data.filter(t => t.tenderID.toLowerCase() === query.toLowerCase()) : [];
-                this.updateProgress(100, 'Завершено');
+                const result = await this.fetchRaw(`tenderID=${terms[0]}`);
+                tenders = result ? result.data.filter(t => t.tenderID.toLowerCase() === terms[0].toLowerCase()) : [];
             } 
-            // Priority 2: Deep Scan (Keywords or EDRPOU)
+            // Priority 2: Scan with multi-term filtering
             else {
                 let offset = '';
                 const pageSize = 1000;
                 const pages = Math.ceil(maxTenders / pageSize);
-                const isEdrpou = /^\d{8}$/.test(query);
 
                 for (let i = 0; i < pages; i++) {
                     const progress = Math.round((i / pages) * 90) + 5;
-                    this.updateProgress(progress, `Сканування бази... (${(i + 1) * pageSize} тендерів)`);
+                    this.updateProgress(progress, `Сканування... (${(i + 1) * pageSize} тендерів)`);
 
-                    // For EDRPOU we don't use 'q' parameter as it often fails/ignores on API side
-                    // Instead we scan latest tenders and filter precisely on client
                     const params = `${offset ? `offset=${offset}` : ''}`;
                     const result = await this.fetchRaw(params);
 
                     if (result && result.data && result.data.length > 0) {
-                        const batchMatches = this.applyStrictFilter(result.data, query, statusFilter);
+                        const batchMatches = this.applyStrictFilter(result.data, terms, statusFilter);
                         tenders = [...tenders, ...batchMatches];
                         
                         offset = result.next_page?.offset || '';
                         if (!offset) break;
-                        
-                        // If we found enough results for a specific EDRPOU, we can stop early
-                        if (isEdrpou && tenders.length >= 50) break;
                     } else {
                         break;
                     }
                 }
 
-                this.updateProgress(95, 'Сортування...');
+                this.updateProgress(95, 'Сортування за датою...');
                 tenders = tenders.sort((a, b) => new Date(b.dateModified) - new Date(a.dateModified));
-                this.updateProgress(100, 'Завершено');
             }
         } catch (error) {
             console.error('Search error:', error);
             this.updateProgress(100, 'Помилка');
         }
 
+        this.updateProgress(100, 'Завершено');
         setTimeout(() => this.progressContainer.classList.add('hidden'), 800);
         this.renderTenders(tenders, this.searchResults, tenders.length, query);
     }
 
-    applyStrictFilter(tenders, query, statusFilter) {
-        const q = query.toLowerCase();
-        const isEdrpou = /^\d{8}$/.test(query);
-
+    applyStrictFilter(tenders, terms, statusFilter) {
         return tenders.filter(t => {
             // 1. Status check
             if (statusFilter === 'active') {
@@ -201,23 +205,31 @@ class ProzorroApp {
                 return false;
             }
 
-            // 2. Content check (STRICT)
-            if (isEdrpou) {
-                return t.procuringEntity?.identifier?.id === query;
-            } else {
-                const inTitle = (t.title || '').toLowerCase().includes(q);
-                const inEntity = (t.procuringEntity?.name || '').toLowerCase().includes(q);
-                const inId = (t.tenderID || '').toLowerCase().includes(q);
-                return inTitle || inEntity || inId;
-            }
+            // 2. Content check (Match ANY of the terms)
+            return terms.some(term => {
+                const q = term.toLowerCase();
+                const isEdrpou = /^\d{8}$/.test(term);
+                
+                if (isEdrpou) {
+                    return t.procuringEntity?.identifier?.id === term;
+                } else {
+                    const inTitle = (t.title || '').toLowerCase().includes(q);
+                    const inEntity = (t.procuringEntity?.name || '').toLowerCase().includes(q);
+                    const inId = (t.tenderID || '').toLowerCase().includes(q);
+                    return inTitle || inEntity || inId;
+                }
+            });
         });
     }
 
     renderTenders(tenders, container, searchedCount = 0, query = '') {
-        const isEdrpou = /^\d{8}$/.test(query);
-        const externalSearchUrl = isEdrpou
-            ? `https://prozorro.gov.ua/uk/search/tender?buyer=${query}`
-            : `https://prozorro.gov.ua/uk/search/tender?q=${encodeURIComponent(query)}`;
+        const terms = query.split(/[\s,]+/).filter(t => t.length > 0);
+        const edrpous = terms.filter(t => /^\d{8}$/.test(t));
+        
+        let externalSearchUrl = `https://prozorro.gov.ua/uk/search/tender?q=${encodeURIComponent(query)}`;
+        if (edrpous.length > 0) {
+            externalSearchUrl = `https://prozorro.gov.ua/uk/search/tender?${edrpous.map(e => `buyer=${e}`).join('&')}`;
+        }
 
         if (!tenders || tenders.length === 0) {
             container.innerHTML = `
