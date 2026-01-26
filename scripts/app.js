@@ -95,16 +95,13 @@ class ProzorroApp {
 
     async fetchRaw(params = '') {
         try {
-            // Using AllOrigins proxy to bypass CORS on GitHub Pages
+            // Using corsproxy.io to bypass CORS - more stable than allorigins
             const targetUrl = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
-            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
             
             const response = await fetch(proxyUrl);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-            
-            // AllOrigins returns the content as a string in 'contents' field
-            return JSON.parse(data.contents);
+            return await response.json();
         } catch (error) {
             console.error('Fetch error:', error);
             return null;
