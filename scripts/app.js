@@ -6,8 +6,8 @@ class ProzorroApp {
 
         // Add default EDRPOUs if watchlist is empty or missing them
         const defaults = [
-            { code: '26613094', name: 'КНУ ім. Тараса Шевченка' },
-            { code: '08532943', name: 'КП «КИЇВПАСТРАНС»' }
+            { code: '26613094', name: 'Військова частина А4533' },
+            { code: '08532943', name: 'ВІЙСЬКОВА ЧАСТИНА А1124' }
         ];
         defaults.forEach(d => {
             if (!this.watchlist.find(i => i.code === d.code)) {
@@ -191,23 +191,15 @@ class ProzorroApp {
             'tenderPeriod'
         ].join(',');
 
-        const targetUrl = `${API_BASE}/tenders?opt_fields=${fields}&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
+        const url = `${API_BASE}/tenders?opt_fields=${fields}&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
 
-        const proxies = [
-            url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            url => `https://api.codetabs.com/v1/proxy?url=${encodeURIComponent(url)}`
-        ];
-
-        for (const proxyFn of proxies) {
-            try {
-                const response = await fetch(proxyFn(targetUrl));
-                if (response.ok) {
-                    const text = await response.text();
-                    return JSON.parse(text);
-                }
-            } catch (e) {
-                console.warn("Proxy failed, trying next...");
+        try {
+            const response = await fetch(url, { mode: 'cors' });
+            if (response.ok) {
+                return await response.json();
             }
+        } catch (e) {
+            console.error("API Fetch failed:", e);
         }
         return null;
     }
