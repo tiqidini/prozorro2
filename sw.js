@@ -6,7 +6,8 @@ const ASSETS = [
     './scripts/app.js',
     './manifest.json',
     './assets/icon-192.png',
-    './assets/icon-512.png'
+    './assets/icon-512.png',
+    './data/tenders.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -17,6 +18,21 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+    // Network-first strategy for data
+    if (event.request.url.includes('tenders.json')) {
+        event.respondWith(
+            fetch(event.request)
+                .then(response => {
+                    const clone = response.clone();
+                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+                    return response;
+                })
+                .catch(() => caches.match(event.request))
+        );
+        return;
+    }
+
+    // Cache-first for others
     event.respondWith(
         caches.match(event.request)
             .then((response) => response || fetch(event.request))

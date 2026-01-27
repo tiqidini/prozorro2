@@ -17,13 +17,11 @@ class ProzorroApp {
         localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
 
         this.tenders = [];
+        this.lastUpdated = null;
         this.initElements();
         this.initEvents();
         this.renderWatchlist();
-        this.loadFeed();
-
-        // Push notification check logic (placeholder)
-        this.checkNewTendersInterval();
+        this.loadLocalData(); // New entry point
     }
 
     initElements() {
@@ -177,30 +175,45 @@ class ProzorroApp {
         this.tabs.forEach(t => t.classList.toggle('active', t.id === `tab-${tabId}`));
     }
 
-    async fetchRaw(params = '') {
-        const fields = [
-            'procuringEntity',
-            'value',
-            'title',
-            'status',
-            'tenderID',
-            'dateModified',
-            'procurementMethodType',
-            'mainProcurementCategory',
-            'items',
-            'tenderPeriod'
-        ].join(',');
-
-        const url = `${API_BASE}/tenders?opt_fields=${fields}&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
-
+    async loadLocalData() {
+        this.tendersList.innerHTML = '<div class="loader"></div>';
         try {
-            const response = await fetch(url, { mode: 'cors' });
+            const response = await fetch(`./data/tenders.json?_v=${Date.now()}`);
             if (response.ok) {
-                return await response.json();
+                const data = await response.json();
+                this.tenders = data.tenders || [];
+                this.lastUpdated = data.lastUpdated;
+                this.renderFeed();
+                this.updateStatusInfo();
+            } else {
+                throw new Error("Local data not found. GitHub Action might be running for the first time.");
             }
         } catch (e) {
-            console.error("API Fetch failed:", e);
+            console.error(e);
+            this.tendersList.innerHTML = `
+                <div class="empty-state">
+                    <p>Дані ще не завантажені</p>
+                    <p style="font-size:0.8rem; margin-top:10px;">GitHub Action готує інформацію. Оновіть сторінку через кілька хвилин.</p>
+                </div>
+            `;
         }
+    }
+
+    updateStatusInfo() {
+        const text = document.getElementById('sync-text');
+        if (text && this.lastUpdated) {
+            const time = new Date(this.lastUpdated).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+            text.innerText = `Оновлено о ${time}`;
+        }
+    }
+
+    renderFeed() {
+        this.renderTenders(this.tenders, this.tendersList, this.tenders.length, '');
+    }
+
+    // Direct API fetch is disabled due to CORS. Using local data mirror instead.
+    async fetchRaw(params = '') {
+        console.warn("Direct API access blocked by CORS. Using local data.");
         return null;
     }
 
@@ -209,15 +222,8 @@ class ProzorroApp {
         if (this.progressText) this.progressText.innerText = text;
     }
 
-    async fetchTenders(params = '') {
-        const data = await this.fetchRaw(params);
-        return data && data.data ? data.data : [];
-    }
-
     async loadFeed() {
-        this.tendersList.innerHTML = '<div class="loader"></div>';
-        const tenders = await this.fetchTenders();
-        this.renderTenders(tenders, this.tendersList, tenders.length, '');
+        this.loadLocalData();
     }
 
     async handleSearch() {
@@ -227,58 +233,24 @@ class ProzorroApp {
         this.switchTab('search');
         this.searchResults.innerHTML = '<div class="loader"></div>';
         this.progressContainer.classList.remove('hidden');
-        this.updateProgress(5, 'Ініціалізація пошуку...');
-
-        const statusFilter = this.filterStatus.value;
-        const maxTenders = parseInt(this.filterDepth.value);
-        let tenders = [];
+        this.updateProgress(20, 'Пошук у локальній базі...');
 
         try {
-            // Split query into multiple terms (support for multiple EDRPOUs)
             const terms = query.split(/[\s,]+/).filter(t => t.length > 0);
-            const isMultiEdrpou = terms.every(t => /^\d{8}$/.test(t));
+            const statusFilter = this.filterStatus.value;
 
-            // Priority 1: Exact Tender ID Search
-            if (terms.length === 1 && /^UA-\d{4}-\d{2}-\d{2}-\d{6}-[a-z]$/i.test(terms[0])) {
-                this.updateProgress(50, 'Пошук за ID тендера...');
-                const result = await this.fetchRaw(`tenderID=${terms[0]}`);
-                tenders = result ? result.data.filter(t => t.tenderID.toLowerCase() === terms[0].toLowerCase()) : [];
-            }
-            // Priority 2: Scan with multi-term filtering
-            else {
-                let offset = '';
-                const pageSize = 1000;
-                const pages = Math.ceil(maxTenders / pageSize);
+            this.updateProgress(60, 'Фільтрація...');
+            const results = this.applyStrictFilter(this.tenders, terms, statusFilter);
 
-                for (let i = 0; i < pages; i++) {
-                    const progress = Math.round((i / pages) * 90) + 5;
-                    this.updateProgress(progress, `Сканування... (${(i + 1) * pageSize} тендерів)`);
+            this.updateProgress(100, 'Завершено');
+            setTimeout(() => this.progressContainer.classList.add('hidden'), 500);
 
-                    const params = `${offset ? `offset=${offset}` : ''}`;
-                    const result = await this.fetchRaw(params);
-
-                    if (result && result.data && result.data.length > 0) {
-                        const batchMatches = this.applyStrictFilter(result.data, terms, statusFilter);
-                        tenders = [...tenders, ...batchMatches];
-
-                        offset = result.next_page?.offset || '';
-                        if (!offset) break;
-                    } else {
-                        break;
-                    }
-                }
-
-                this.updateProgress(95, 'Сортування за датою...');
-                tenders = tenders.sort((a, b) => new Date(b.dateModified) - new Date(a.dateModified));
-            }
+            this.renderTenders(results, this.searchResults, results.length, query);
         } catch (error) {
             console.error('Search error:', error);
             this.updateProgress(100, 'Помилка');
+            setTimeout(() => this.progressContainer.classList.add('hidden'), 1000);
         }
-
-        this.updateProgress(100, 'Завершено');
-        setTimeout(() => this.progressContainer.classList.add('hidden'), 800);
-        this.renderTenders(tenders, this.searchResults, tenders.length, query);
     }
 
     applyStrictFilter(tenders, terms, statusFilter) {
