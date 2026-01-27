@@ -3,6 +3,7 @@ const path = require('path');
 
 const API_BASE = 'https://public.api.openprocurement.org/api/2.5';
 const TARGET_EDRPOUS = ['26613094', '08532943']; // В/Ч А4533 та В/Ч А1124
+const DATA_FILE = path.join(__dirname, '..', 'data', 'tenders.json');
 
 async function fetchRaw(params = '') {
     const fields = [
@@ -32,14 +33,25 @@ async function fetchRaw(params = '') {
 }
 
 async function updateTenders() {
-    console.log("Starting tender update...");
-    let targetedTenders = [];
-    let generalTenders = [];
+    console.log("Starting cumulative tender update...");
+
+    // 1. Load existing data
+    let existingData = { lastUpdated: null, tenders: [] };
+    if (fs.existsSync(DATA_FILE)) {
+        try {
+            existingData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            console.log(`Loaded ${existingData.tenders.length} existing tenders.`);
+        } catch (e) {
+            console.error("Failed to load existing data, starting fresh.");
+        }
+    }
+
+    let newTenders = [];
     let offset = '';
 
-    // 1. Deep Scan for Targeted EDRPOUs (last 3000 tenders)
-    for (let i = 0; i < 3; i++) {
-        console.log(`Scanning targets page ${i + 1}...`);
+    // 2. Scan latest tenders (2 pages for speed + history)
+    for (let i = 0; i < 2; i++) {
+        console.log(`Scanning Prozorro API page ${i + 1}...`);
         const result = await fetchRaw(offset ? `offset=${offset}` : '');
         if (result && result.data) {
             const matches = result.data.filter(t =>
@@ -47,37 +59,36 @@ async function updateTenders() {
                 t.procuringEntity.identifier &&
                 TARGET_EDRPOUS.includes(t.procuringEntity.identifier.id)
             );
-            targetedTenders = [...targetedTenders, ...matches];
-
-            // Keep first 100 as general feed
-            if (i === 0) generalTenders = result.data.slice(0, 100);
-
+            newTenders = [...newTenders, ...matches];
             offset = result.next_page ? result.next_page.offset : '';
             if (!offset) break;
         } else break;
     }
 
-    // Merge and Deduplicate
-    const all = [...targetedTenders, ...generalTenders];
+    // 3. Merge and Deduplicate
+    const combined = [...newTenders, ...existingData.tenders];
     const seen = new Set();
-    const uniqueTenders = all.filter(t => {
+    const uniqueTenders = combined.filter(t => {
         const isNew = !seen.has(t.tenderID);
         seen.add(t.tenderID);
         return isNew;
     }).sort((a, b) => new Date(b.dateModified) - new Date(a.dateModified));
 
-    const dataDir = path.join(__dirname, '..', 'data');
-    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+    // 4. Limit storage (e.g., keep last 500 records to prevent file bloat)
+    const finalTenders = uniqueTenders.slice(0, 500);
+
+    const dataDir = path.dirname(DATA_FILE);
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
     fs.writeFileSync(
-        path.join(dataDir, 'tenders.json'),
+        DATA_FILE,
         JSON.stringify({
             lastUpdated: new Date().toISOString(),
-            tenders: uniqueTenders
+            tenders: finalTenders
         }, null, 2)
     );
 
-    console.log(`Successfully updated. Total stored: ${uniqueTenders.length} (Targeted: ${targetedTenders.length})`);
+    console.log(`Update complete. Total in archive: ${finalTenders.length} (Added ${uniqueTenders.length - existingData.tenders.length} new)`);
 }
 
 updateTenders().catch(console.error);
