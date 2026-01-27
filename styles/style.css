@@ -131,48 +131,124 @@ main {
     background: var(--card-bg);
     border: 1px solid var(--glass-border);
     border-radius: 20px;
-    padding: 16px;
+    padding: 18px;
     margin-bottom: 16px;
-    transition: transform 0.2s;
+    transition: transform 0.2s, background 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .tender-card:active {
     transform: scale(0.98);
+    background: rgba(45, 55, 72, 0.8);
 }
 
-.tender-card .status {
-    display: inline-block;
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 10px;
-    background: rgba(59, 130, 246, 0.2);
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tender-card .status-tag {
+    font-size: 0.65rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(59, 130, 246, 0.15);
     color: var(--primary);
-    margin-bottom: 8px;
     text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.status-tag.active {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.status-tag.unsuccessful {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.status-tag.cancelled {
+    background: rgba(107, 114, 128, 0.15);
+    color: #9ca3af;
+}
+
+.status-tag.complete {
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--secondary);
+}
+
+.cpv-tag {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
     font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 8px;
+    border-radius: 8px;
 }
 
 .tender-card .title {
-    font-size: 1rem;
+    font-size: 1.05rem;
     font-weight: 600;
     line-height: 1.4;
-    margin-bottom: 8px;
+    color: var(--text-primary);
     display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
 
-.tender-card .budget {
-    font-size: 1.1rem;
-    color: #fbbf24;
-    font-weight: 700;
-    margin-bottom: 8px;
+.procedure-type {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: rgba(99, 102, 241, 0.05);
+    padding: 6px 10px;
+    border-radius: 10px;
+    border-left: 3px solid var(--secondary);
 }
 
-.tender-card .meta {
+.budget-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 4px 0;
+}
+
+.budget-label {
     font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.budget-value {
+    font-size: 1.25rem;
+    color: #fbbf24;
+    font-weight: 800;
+    text-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+}
+
+.meta-footer {
+    border-top: 1px solid var(--glass-border);
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.entity-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tender-date {
+    font-size: 0.7rem;
     color: var(--text-secondary);
 }
 

@@ -3,6 +3,19 @@ const API_BASE = 'https://public.api.openprocurement.org/api/2.5';
 class ProzorroApp {
     constructor() {
         this.watchlist = JSON.parse(localStorage.getItem('prozorro_watchlist')) || [];
+
+        // Add default EDRPOUs if watchlist is empty or missing them
+        const defaults = [
+            { code: '26613094', name: 'КНУ ім. Тараса Шевченка' },
+            { code: '08532943', name: 'КП «КИЇВПАСТРАНС»' }
+        ];
+        defaults.forEach(d => {
+            if (!this.watchlist.find(i => i.code === d.code)) {
+                this.watchlist.push(d);
+            }
+        });
+        localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
+
         this.tenders = [];
         this.initElements();
         this.initEvents();
@@ -54,7 +67,31 @@ class ProzorroApp {
 
     formatCurrency(value) {
         if (!value) return '0.00 грн';
-        return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: value.currency || 'UAH' }).format(value.amount);
+        return new Intl.NumberFormat('uk-UA', {
+            style: 'currency',
+            currency: value.currency || 'UAH',
+            maximumFractionDigits: 0
+        }).format(value.amount);
+    }
+
+    formatProcedure(type) {
+        const types = {
+            'belowThreshold': 'Допорогова закупівля',
+            'aboveThresholdUA': 'Відкриті торги',
+            'aboveThresholdEU': 'Відкриті торги з публікацією англ. мовою',
+            'reporting': 'Звіт про укладений договір',
+            'negotiation': 'Переговорна процедура',
+            'omv': 'Спрощена закупівля',
+            'cpv': 'Запит пропозицій (Prozorro Market)'
+        };
+        return types[type] || type;
+    }
+
+    getCPVCode(tender) {
+        if (tender.items && tender.items[0] && tender.items[0].classification) {
+            return tender.items[0].classification.id;
+        }
+        return '---';
     }
 
     initEvents() {
@@ -98,16 +135,16 @@ class ProzorroApp {
         if (milBtn) {
             milBtn.addEventListener('click', async () => {
                 const codes = ["26613094", "08532943", "08151359", "08526931", "07666794", "08388245", "07899653", "24981089", "08113718", "08540730", "07944268", "07893124", "24983059", "08140309", "08160039", "24979158", "08379186", "08032962", "14304637", "07732858", "08196534", "07967633", "08164155", "08027576", "07644539"];
-                
+
                 milBtn.disabled = true;
                 milBtn.innerText = 'Додавання...';
-                
+
                 for (const c of codes) {
                     await this.addToWatchlist(c, 'Військова частина/Орган');
                 }
-                
+
                 await this.checkNewTendersGlobal(3);
-                
+
                 milBtn.disabled = false;
                 milBtn.innerText = '+ Військові частини';
                 this.switchTab('watchlist');
@@ -141,8 +178,21 @@ class ProzorroApp {
     }
 
     async fetchRaw(params = '') {
-        const targetUrl = `${API_BASE}/tenders?opt_fields=procuringEntity,value,title,status,tenderID,dateModified&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
-        
+        const fields = [
+            'procuringEntity',
+            'value',
+            'title',
+            'status',
+            'tenderID',
+            'dateModified',
+            'procurementMethodType',
+            'mainProcurementCategory',
+            'items',
+            'tenderPeriod'
+        ].join(',');
+
+        const targetUrl = `${API_BASE}/tenders?opt_fields=${fields}&descending=1&limit=1000&${params}&_v=${Date.now()}`.replace('&&', '&');
+
         const proxies = [
             url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
             url => `https://api.codetabs.com/v1/proxy?url=${encodeURIComponent(url)}`
@@ -201,7 +251,7 @@ class ProzorroApp {
                 this.updateProgress(50, 'Пошук за ID тендера...');
                 const result = await this.fetchRaw(`tenderID=${terms[0]}`);
                 tenders = result ? result.data.filter(t => t.tenderID.toLowerCase() === terms[0].toLowerCase()) : [];
-            } 
+            }
             // Priority 2: Scan with multi-term filtering
             else {
                 let offset = '';
@@ -218,7 +268,7 @@ class ProzorroApp {
                     if (result && result.data && result.data.length > 0) {
                         const batchMatches = this.applyStrictFilter(result.data, terms, statusFilter);
                         tenders = [...tenders, ...batchMatches];
-                        
+
                         offset = result.next_page?.offset || '';
                         if (!offset) break;
                     } else {
@@ -253,7 +303,7 @@ class ProzorroApp {
             return terms.some(term => {
                 const q = term.toLowerCase();
                 const isEdrpou = /^\d{8}$/.test(term);
-                
+
                 if (isEdrpou) {
                     return t.procuringEntity?.identifier?.id === term;
                 } else {
@@ -269,7 +319,7 @@ class ProzorroApp {
     renderTenders(tenders, container, searchedCount = 0, query = '') {
         const terms = query.split(/[\s,]+/).filter(t => t.length > 0);
         const edrpous = terms.filter(t => /^\d{8}$/.test(t));
-        
+
         let externalSearchUrl = `https://prozorro.gov.ua/uk/search/tender?q=${encodeURIComponent(query)}`;
         if (edrpous.length > 0) {
             externalSearchUrl = `https://prozorro.gov.ua/uk/search/tender?${edrpous.map(e => `buyer=${e}`).join('&')}`;
@@ -297,17 +347,32 @@ class ProzorroApp {
                 </div>
                 <a href="${externalSearchUrl}" target="_blank" style="font-size:0.8rem; color:var(--primary); text-decoration:none;">Повний пошук →</a>
             </div>
-            ` + tenders.map(tender => `
+            ` + tenders.map(tender => {
+            const cpv = this.getCPVCode(tender);
+            const procedure = this.formatProcedure(tender.procurementMethodType);
+
+            return `
             <div class="tender-card glass" onclick="window.open('https://prozorro.gov.ua/tender/${tender.tenderID}', '_blank')">
-                <span class="status">${this.formatStatus(tender.status)}</span>
+                <div class="card-header">
+                    <span class="status-tag ${tender.status.split('.')[0]}">${this.formatStatus(tender.status)}</span>
+                    <span class="cpv-tag">📂 ${cpv}</span>
+                </div>
+                
                 <div class="title">${tender.title}</div>
-                <div class="budget">${this.formatCurrency(tender.value)}</div>
-                <div class="meta">
-                    <div>${tender.procuringEntity?.name || 'Невідомий замовник'}</div>
-                    <div style="margin-top: 4px; font-size: 0.7rem;">ID: ${tender.tenderID} • ${new Date(tender.dateModified).toLocaleDateString()}</div>
+                
+                <div class="procedure-type">${procedure}</div>
+                
+                <div class="budget-row">
+                    <span class="budget-label">Бюджет:</span>
+                    <span class="budget-value">${this.formatCurrency(tender.value)}</span>
+                </div>
+
+                <div class="meta-footer">
+                    <div class="entity-name">🏢 ${tender.procuringEntity?.name || 'Невідомий замовник'}</div>
+                    <div class="tender-date">📅 ${new Date(tender.dateModified).toLocaleDateString()} • ID: ${tender.tenderID.split('-').pop()}</div>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
 
     renderWatchlist() {
@@ -340,7 +405,7 @@ class ProzorroApp {
     // New optimized monitoring logic: scan once for all customers
     async checkNewTendersGlobal(depth = 1) {
         if (this.watchlist.length === 0) return;
-        
+
         console.log(`Global check for ${this.watchlist.length} customers...`);
         const codes = this.watchlist.map(i => i.code);
         let offset = '';
