@@ -1,4 +1,33 @@
 {
-  "lastUpdated": "2026-01-29T08:00:46.222Z",
-  "tenders": []
+  "lastUpdated": "2026-01-29T09:06:56.571Z",
+  "tenders": [
+    {
+      "dateModified": "2026-01-29T10:45:23.877629+02:00",
+      "tenderID": "UA-2026-01-29-003913-a",
+      "procurementMethodType": "reporting",
+      "procuringEntity": {
+        "name": "ВІЙСЬКОВА ЧАСТИНА А1124",
+        "identifier": {
+          "scheme": "UA-EDR",
+          "id": "08532943",
+          "legalName": "ВІЙСЬКОВА ЧАСТИНА А1124"
+        },
+        "address": {
+          "streetAddress": "вул. Творча 11",
+          "locality": "Львів",
+          "region": "Львівська область",
+          "postalCode": "79059",
+          "countryName": "Україна"
+        },
+        "contactPoint": {
+          "name": "Спанчак Олена Вячеславівна",
+          "email": "Fes_a1124@post.mil.gov.ua",
+          "telephone": "380939491968"
+        },
+        "kind": "defense"
+      },
+      "status": "complete",
+      "id": "6f33d680604448c3b1dbc9e33d9efec2"
+    }
+  ]
 }
