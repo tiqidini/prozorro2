@@ -89,6 +89,9 @@ class ProzorroApp {
         if (tender.items && tender.items[0] && tender.items[0].classification) {
             return tender.items[0].classification.id;
         }
+        if (tender.mainProcurementCategory) {
+            return tender.mainProcurementCategory;
+        }
         return '---';
     }
 
@@ -322,7 +325,7 @@ class ProzorroApp {
                     <span class="cpv-tag">📂 ${cpv}</span>
                 </div>
                 
-                <div class="title">${tender.title}</div>
+                <div class="title">${tender.title || 'Без назви (деталі на сайті)'}</div>
                 
                 <div class="procedure-type">${procedure}</div>
                 
@@ -333,7 +336,7 @@ class ProzorroApp {
 
                 <div class="meta-footer">
                     <div class="entity-name">🏢 ${tender.procuringEntity?.name || 'Невідомий замовник'}</div>
-                    <div class="tender-date">📅 ${new Date(tender.dateModified).toLocaleDateString()} • ID: ${tender.tenderID.split('-').pop()}</div>
+                    <div class="tender-date">📅 ${new Date(tender.dateModified).toLocaleDateString()} • ID: ${tender.tenderID}</div>
                 </div>
             </div>
         `}).join('');
