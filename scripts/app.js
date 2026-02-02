@@ -103,13 +103,13 @@ class ProzorroApp {
 
     formatProcedure(type) {
         const types = {
-            'belowThreshold': 'Допорогова закупівля',
+            'belowThreshold': 'Спрощена закупівля',
             'aboveThresholdUA': 'Відкриті торги',
-            'aboveThresholdEU': 'Відкриті торги з публікацією англ. мовою',
-            'reporting': 'Звіт про укладений договір',
+            'aboveThresholdEU': 'Відкриті торги (EU)',
+            'reporting': 'Звіт про договір',
             'negotiation': 'Переговорна процедура',
             'omv': 'Спрощена закупівля',
-            'cpv': 'Запит пропозицій (Prozorro Market)'
+            'cpv': 'Запит цінових пропозицій'
         };
         return types[type] || type;
     }
@@ -355,6 +355,8 @@ class ProzorroApp {
                 
                 <div class="title">${tender.title || 'Без назви (деталі на сайті)'}</div>
                 
+                <div class="tender-id-badge">ID: ${tender.tenderID || '---'}</div>
+                
                 <div class="procedure-type">${procedure}</div>
                 
                 <div class="budget-row">
@@ -364,7 +366,7 @@ class ProzorroApp {
 
                 <div class="meta-footer">
                     <div class="entity-name">🏢 ${tender.procuringEntity?.name || 'Невідомий замовник'}</div>
-                    <div class="tender-date">📅 ${new Date(tender.dateModified || Date.now()).toLocaleDateString()} • ID: ${tender.tenderID || '---'}</div>
+                    <div class="tender-date">📅 ${new Date(tender.dateModified || Date.now()).toLocaleDateString()}</div>
                 </div>
             </div>
         `}).join('');

@@ -28,7 +28,7 @@ async function fetchRaw(params = '') {
 }
 
 async function updateTenders() {
-    console.log(`Starting deep scan for ${TARGET_EDRPOUS.length} targets...`);
+    console.log(`Starting ULTRA deep scan (100 pages) for ${TARGET_EDRPOUS.length} targets...`);
 
     let existingData = { lastUpdated: null, tenders: [] };
     if (fs.existsSync(DATA_FILE)) {
@@ -42,45 +42,56 @@ async function updateTenders() {
     let matchedIds = new Set();
     let offset = '';
 
-    // 1. Scan latest 15000 tenders to find IDs of targets
-    // This is a "deep scan" to ensure we haven't missed anything over the last week
-    for (let i = 0; i < 15; i++) {
-        console.log(`Scanning list page ${i + 1}...`);
+    // 1. Scan latest 100,000 tenders to find IDs of targets
+    // This is vital to capture all tenders from the start of 2026
+    for (let i = 0; i < 100; i++) {
+        console.log(`Scanning page ${i + 1}/100...`);
         const result = await fetchRaw(offset ? `offset=${offset}` : '');
         if (result && result.data) {
+            let pageFoundCount = 0;
             result.data.forEach(t => {
                 if (t.procuringEntity && t.procuringEntity.identifier && TARGET_EDRPOUS.includes(t.procuringEntity.identifier.id)) {
                     matchedIds.add(t.id);
+                    pageFoundCount++;
                 }
             });
+            console.log(`  Found ${pageFoundCount} matches on this page.`);
             offset = result.next_page ? result.next_page.offset : '';
             if (!offset) break;
+
+            // Check if we already went too far back (limit scanning if needed, but 100 pages is safe)
         } else break;
     }
 
     // 2. SANITIZATION: Check existing archive for incomplete records
-    console.log("Adding incomplete archival records to re-fetch queue...");
+    console.log("Checking archival records for issues...");
     existingData.tenders.forEach(t => {
         if (!t.title || !t.value || t.title === 'undefined' || typeof t.value.amount === 'undefined') {
-            matchedIds.add(t.id);
+            matchedIds.add(t.id || t.tenderID); // Add internal ID to re-fetch
         }
     });
 
     // 3. Fetch FULL details for each matched ID
     let detailedTenders = [];
-    console.log(`Queue size: ${matchedIds.size} tenders. Fetching full details for 100% data quality...`);
+    console.log(`Queue size: ${matchedIds.size} unique tenders. Fetching full details...`);
 
-    for (const id of matchedIds) {
+    const idsToFetch = Array.from(matchedIds);
+    for (let i = 0; i < idsToFetch.length; i++) {
+        const id = idsToFetch[i];
         try {
+            process.stdout.write(`[${i + 1}/${idsToFetch.length}] Fetching ${id}... `);
             const response = await fetch(`${API_BASE}/tenders/${id}`);
             if (response.ok) {
                 const full = await response.json();
                 if (full.data) {
                     detailedTenders.push(full.data);
+                    console.log("OK");
                 }
+            } else {
+                console.log("FAILED (Status " + response.status + ")");
             }
         } catch (e) {
-            console.error(`Error fetching detail for ${id}`);
+            console.log("ERROR");
         }
     }
 
@@ -88,11 +99,15 @@ async function updateTenders() {
     const combined = [...detailedTenders, ...existingData.tenders];
     const seen = new Set();
     const finalTenders = combined.filter(t => {
-        const uniqueId = t.tenderID || t.id;
-        if (!uniqueId || seen.has(uniqueId)) return false;
-        seen.add(uniqueId);
+        const uniqueKey = t.id || t.tenderID;
+        if (!uniqueKey || seen.has(uniqueKey)) return false;
+
+        // Ensure record is complete before committing to final list
+        if (!t.title || t.title === 'undefined') return false;
+
+        seen.add(uniqueKey);
         return true;
-    }).sort((a, b) => new Date(b.dateModified) - new Date(a.dateModified)).slice(0, 1000); // Increased storage limit to 1000
+    }).sort((a, b) => new Date(b.dateModified) - new Date(a.dateModified)).slice(0, 2000);
 
     // 5. Save
     const dataDir = path.dirname(DATA_FILE);
@@ -106,7 +121,7 @@ async function updateTenders() {
         }, null, 2)
     );
 
-    console.log(`Success! Archive contains ${finalTenders.length} high-quality tender records.`);
+    console.log(`\nDONE! Archive updated with ${finalTenders.length} complete records.`);
 }
 
 updateTenders().catch(console.error);
