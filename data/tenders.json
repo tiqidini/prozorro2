@@ -1,9 +1,21 @@
 {
-  "lastUpdated": "2026-02-02T16:54:52.440Z",
+  "lastUpdated": "2026-02-02T17:30:46.443Z",
   "tenders": [
     {
+      "description": "",
+      "date": "2026-01-29T10:45:23.877629+02:00",
       "dateModified": "2026-01-29T10:45:23.877629+02:00",
+      "dateCreated": "2026-01-29T10:45:01.639564+02:00",
       "tenderID": "UA-2026-01-29-003913-a",
+      "owner": "it.ua",
+      "title": "Поштові послуги",
+      "mainProcurementCategory": "services",
+      "procurementMethod": "limited",
+      "plans": [
+        {
+          "id": "e90ede4592254b82ac37a278db8bbc3b"
+        }
+      ],
       "procurementMethodType": "reporting",
       "procuringEntity": {
         "name": "ВІЙСЬКОВА ЧАСТИНА А1124",
@@ -26,7 +38,124 @@
         },
         "kind": "defense"
       },
+      "items": [
+        {
+          "id": "6300c5a80cee470eaa92dc95be52f503",
+          "description": "Пересилання листів",
+          "unit": {
+            "name": "штука",
+            "code": "H87"
+          },
+          "quantity": 9,
+          "classification": {
+            "description": "Поштові послуги",
+            "scheme": "ДК021",
+            "id": "64110000-0"
+          },
+          "deliveryDate": {
+            "endDate": "2026-12-31T00:00:00+02:00"
+          },
+          "deliveryAddress": {
+            "streetAddress": "вул. Творча 11",
+            "locality": "Львів",
+            "region": "Львівська область",
+            "postalCode": "79059",
+            "countryName": "Україна"
+          }
+        },
+        {
+          "id": "729cccc032164dfabc9b86befc1fc089",
+          "description": "Посилки",
+          "unit": {
+            "name": "штука",
+            "code": "H87"
+          },
+          "quantity": 1,
+          "classification": {
+            "description": "Поштові послуги",
+            "scheme": "ДК021",
+            "id": "64110000-0"
+          },
+          "deliveryDate": {
+            "endDate": "2026-12-31T00:00:00+02:00"
+          },
+          "deliveryAddress": {
+            "streetAddress": "вул. Творча 11",
+            "locality": "Львів",
+            "region": "Львівська область",
+            "postalCode": "79059",
+            "countryName": "Україна"
+          }
+        }
+      ],
+      "value": {
+        "amount": 2000,
+        "currency": "UAH",
+        "valueAddedTaxIncluded": true
+      },
       "status": "complete",
+      "awards": [
+        {
+          "id": "cb4e3c9f92f04198ab6c6d7435712424",
+          "qualified": true,
+          "status": "active",
+          "date": "2026-01-29T10:45:02.295108+02:00",
+          "suppliers": [
+            {
+              "name": "Державне підприємство спеціального зв'язку Львівський обласний вузол спеціального зв'язку",
+              "identifier": {
+                "scheme": "UA-EDR",
+                "id": "01186171",
+                "legalName": "Державне підприємство спеціального зв'язку Львівський обласний вузол спеціального зв'язку"
+              },
+              "address": {
+                "streetAddress": "Лисика Євгена,4",
+                "locality": "Львів",
+                "region": "Львівська область",
+                "postalCode": "79019",
+                "countryName": "Україна"
+              },
+              "scale": "large"
+            }
+          ],
+          "value": {
+            "amount": 2000,
+            "currency": "UAH",
+            "valueAddedTaxIncluded": true
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "id": "1ff77ca11d614610bef30ab71da5bc3d",
+          "status": "active",
+          "awardID": "cb4e3c9f92f04198ab6c6d7435712424",
+          "date": "2026-01-29T10:45:23.877629+02:00",
+          "contractID": "UA-2026-01-29-003913-a-a1",
+          "value": {
+            "amount": 2000,
+            "currency": "UAH",
+            "valueAddedTaxIncluded": true,
+            "amountNet": 1666.67
+          }
+        }
+      ],
+      "documents": [
+        {
+          "confidentiality": "public",
+          "documentType": "notice",
+          "hash": "md5:df8fe20475d9dc5eb5c14d26516d46ab",
+          "title": "sign.p7s",
+          "format": "application/pkcs7-signature",
+          "url": "https://public-docs.prozorro.gov.ua/get/888aa8b8812b4e3ebc005897d4b9484d?Signature=0xm4wo5gc3rHF%2FW2vSnkygQEkMSLuhwPiw9imTxEn6kZsIX4agelBsiyJMENbUPWLrmqT2chnUmRyL841jtjAw%3D%3D&KeyID=52462340",
+          "documentOf": "tender",
+          "language": "uk",
+          "id": "1897c06ceb374d7c86bc6863d1020f56",
+          "datePublished": "2026-01-29T10:45:21.095071+02:00",
+          "dateModified": "2026-01-29T10:45:21.095071+02:00",
+          "author": "tender_owner"
+        }
+      ],
       "id": "6f33d680604448c3b1dbc9e33d9efec2"
     }
   ]
