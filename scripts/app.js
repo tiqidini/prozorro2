@@ -31,17 +31,29 @@ class ProzorroApp {
     constructor() {
         this.watchlist = JSON.parse(localStorage.getItem('prozorro_watchlist')) || [];
 
+        // Migrate/Fix: Ensure all items have 'active' property
+        let changed = false;
+        this.watchlist = this.watchlist.map(item => {
+            if (item.active === undefined) {
+                item.active = true;
+                changed = true;
+            }
+            return item;
+        });
+
         // Add default EDRPOUs if watchlist is empty or missing them
         const defaults = [
-            { code: '26613094', name: 'Військова частина А4533' },
-            { code: '08532943', name: 'ВІЙСЬКОВА ЧАСТИНА А1124' }
+            { code: '26613094', name: 'Військова частина А4533', active: true },
+            { code: '08532943', name: 'ВІЙСЬКОВА ЧАСТИНА А1124', active: true }
         ];
         defaults.forEach(d => {
             if (!this.watchlist.find(i => i.code === d.code)) {
                 this.watchlist.push(d);
+                changed = true;
             }
         });
-        localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
+
+        if (changed) localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
 
         this.tenders = [];
         this.lastUpdated = null;
@@ -239,7 +251,32 @@ class ProzorroApp {
     }
 
     renderFeed() {
-        this.renderTenders(this.tenders, this.tendersList, this.tenders.length, '');
+        const activeEdrpous = this.watchlist.filter(i => i.active).map(i => i.code);
+
+        // Filter tenders: match ANY active EDRPOU
+        const filtered = this.tenders.filter(t => {
+            const edrpou = t.procuringEntity?.identifier?.id;
+            return activeEdrpous.includes(edrpou);
+        });
+
+        if (filtered.length === 0 && this.watchlist.some(i => i.active)) {
+            this.tendersList.innerHTML = `
+                <div class="empty-state">
+                    <p>Тендерів для вибраних замовників не знайдено</p>
+                    <p style="font-size:0.8rem; margin-top:10px;">Спробуйте розширити список або зачекайте на оновлення.</p>
+                </div>
+            `;
+            return;
+        } else if (!this.watchlist.some(i => i.active)) {
+            this.tendersList.innerHTML = `
+                <div class="empty-state">
+                    <p>Будь ласка, виберіть замовників у вкладці "Стеження"</p>
+                </div>
+            `;
+            return;
+        }
+
+        this.renderTenders(filtered, this.tendersList, filtered.length, '');
     }
 
     // Direct API fetch is disabled due to CORS. Using local data mirror instead.
@@ -379,23 +416,36 @@ class ProzorroApp {
         }
 
         this.watchlistItems.innerHTML = this.watchlist.map(item => `
-            <div class="tender-card glass" style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <div class="title" style="margin:0">${item.name || 'Організація'}</div>
-                    <div class="meta">${item.code}</div>
+            <div class="tender-card glass watchlist-card">
+                <input type="checkbox" ${item.active ? 'checked' : ''} onchange="app.toggleWatchlistItem('${item.code}')">
+                <div class="watchlist-info">
+                    <div class="title" style="margin:0; font-size: 1rem;">${item.name || 'Організація'}</div>
+                    <div class="meta" style="font-size: 0.8rem; color: var(--text-secondary);">${item.code}</div>
                 </div>
-                <button class="icon-btn" style="width:36px; height:36px; color:#ef4444;" onclick="app.removeFromWatchlist('${item.code}')">
-                    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                </button>
+                <div class="watchlist-actions">
+                    <button class="icon-btn" style="width:36px; height:36px; color:#ef4444;" onclick="app.removeFromWatchlist('${item.code}')">
+                        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </button>
+                </div>
             </div>
         `).join('');
     }
 
+    toggleWatchlistItem(code) {
+        const item = this.watchlist.find(i => i.code === code);
+        if (item) {
+            item.active = !item.active;
+            localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
+            this.renderFeed();
+        }
+    }
+
     async addToWatchlist(code, name) {
         if (!this.watchlist.find(i => i.code === code)) {
-            this.watchlist.push({ code, name });
+            this.watchlist.push({ code, name, active: true });
             localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
             this.renderWatchlist();
+            this.renderFeed();
         }
     }
 
@@ -448,18 +498,23 @@ class ProzorroApp {
 
     applyPresets() {
         const checkboxes = this.presetList.querySelectorAll('input:checked');
-        const selected = Array.from(checkboxes).map(i => ({
-            code: i.value,
-            name: i.getAttribute('data-name')
-        }));
+        const selectedCodes = Array.from(checkboxes).map(i => i.value);
 
-        // Merge keeping others
-        const nonPresetWatchlist = this.watchlist.filter(w => !MILITARY_PRESETS.some(p => p.code === w.code));
-        this.watchlist = [...nonPresetWatchlist, ...selected];
+        // Update active status for all presets
+        MILITARY_PRESETS.forEach(p => {
+            const existing = this.watchlist.find(w => w.code === p.code);
+            const isSelected = selectedCodes.includes(p.code);
+
+            if (existing) {
+                existing.active = isSelected;
+            } else if (isSelected) {
+                this.watchlist.push({ ...p, active: true });
+            }
+        });
 
         localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
         this.renderWatchlist();
-        this.loadFeed();
+        this.renderFeed();
         this.switchTab('feed');
     }
 }
