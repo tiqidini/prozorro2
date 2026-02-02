@@ -12,17 +12,32 @@ const TARGET_EDRPOUS = [
 
 const DATA_FILE = path.join(__dirname, '..', 'data', 'tenders.json');
 
+async function fetchWithRetry(url, options = {}, retries = 3, backoff = 1000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, options);
+            if (response.ok) return response;
+            if (response.status >= 500) {
+                console.log(`Server error (${response.status}). Retrying in ${backoff}ms...`);
+            } else {
+                return response; // Client error, don't retry
+            }
+        } catch (e) {
+            console.error(`Fetch error: ${e.message}. Retrying in ${backoff}ms...`);
+        }
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        backoff *= 2;
+    }
+    return null;
+}
+
 async function fetchRaw(params = '') {
     const fields = 'procuringEntity,tenderID,id,dateModified';
     const url = `${API_BASE}/tenders?opt_fields=${fields}&descending=1&limit=1000&${params}`;
 
-    try {
-        const response = await fetch(url);
-        if (response.ok) {
-            return await response.json();
-        }
-    } catch (e) {
-        console.error("Fetch failed:", e);
+    const response = await fetchWithRetry(url);
+    if (response && response.ok) {
+        return await response.json();
     }
     return null;
 }
@@ -80,18 +95,18 @@ async function updateTenders() {
         const id = idsToFetch[i];
         try {
             process.stdout.write(`[${i + 1}/${idsToFetch.length}] Fetching ${id}... `);
-            const response = await fetch(`${API_BASE}/tenders/${id}`);
-            if (response.ok) {
+            const response = await fetchWithRetry(`${API_BASE}/tenders/${id}`);
+            if (response && response.ok) {
                 const full = await response.json();
                 if (full.data) {
                     detailedTenders.push(full.data);
                     console.log("OK");
                 }
             } else {
-                console.log("FAILED (Status " + response.status + ")");
+                console.log("FAILED" + (response ? ` (Status ${response.status})` : " (No response)"));
             }
         } catch (e) {
-            console.log("ERROR");
+            console.log("ERROR: " + e.message);
         }
     }
 

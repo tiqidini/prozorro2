@@ -2,7 +2,7 @@ name: Update Prozorro Tenders Data
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '12,42 * * * *'
   workflow_dispatch:
 
 jobs:
