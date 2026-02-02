@@ -1,4 +1,4 @@
-const CACHE_NAME = 'prozorro-tracker-v2';
+const CACHE_NAME = 'prozorro-tracker-v3';
 const ASSETS = [
     './',
     './index.html',
