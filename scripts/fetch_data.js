@@ -22,7 +22,7 @@ async function fetchRaw(params = '') {
 }
 
 async function updateTenders() {
-    console.log("Starting deep-fetch tender update...");
+    console.log("Starting deep-fetch tender update with sanitization...");
 
     let existingData = { lastUpdated: null, tenders: [] };
     if (fs.existsSync(DATA_FILE)) {
@@ -36,7 +36,7 @@ async function updateTenders() {
     let matchedIds = new Set();
     let offset = '';
 
-    // 1. Scan latest 3000 tenders to find IDs of targets
+    // 1. Scan latest 3000 tenders to find IDs of targets (for new tenders)
     for (let i = 0; i < 3; i++) {
         console.log(`Scanning page ${i + 1}...`);
         const result = await fetchRaw(offset ? `offset=${offset}` : '');
@@ -51,13 +51,21 @@ async function updateTenders() {
         } else break;
     }
 
-    // 2. Fetch FULL details for each matched ID
+    // 2. SANITIZATION: Check existing archive for incomplete records
+    console.log("Checking archive for incomplete records...");
+    existingData.tenders.forEach(t => {
+        // If it's missing title or value, we need to re-fetch full detail
+        if (!t.title || !t.value || t.title === 'undefined' || typeof t.value.amount === 'undefined') {
+            console.log(`Record ${t.tenderID} is incomplete. Adding to re-fetch queue.`);
+            matchedIds.add(t.id); // 'id' is the internal uuid needed for the direct fetch
+        }
+    });
+
+    // 3. Fetch FULL details for each matched ID
     let detailedTenders = [];
-    console.log(`Matched ${matchedIds.size} target tenders. Fetching full details...`);
+    console.log(`Total queue size: ${matchedIds.size} tenders. Fetching full details...`);
 
     for (const id of matchedIds) {
-        // Skip if we already have it and it wasn't modified recently (optional optimization)
-        // For simplicity, we fetch all matched this time to ensure data quality
         try {
             const response = await fetch(`${API_BASE}/tenders/${id}`);
             if (response.ok) {
@@ -71,17 +79,20 @@ async function updateTenders() {
         }
     }
 
-    // 3. Merge with archive
+    // 4. Merge with archive (new detailed records win over old ones)
     const combined = [...detailedTenders, ...existingData.tenders];
     const seen = new Set();
     const finalTenders = combined.filter(t => {
-        const id = t.tenderID || t.id;
-        if (!id || seen.has(id)) return false;
-        seen.add(id);
+        const uniqueId = t.tenderID || t.id;
+        if (!uniqueId || seen.has(uniqueId)) return false;
+
+        // Priority check: if we just fetched a detailed version, it's already in 'seen' if we are iterating correctly
+        // But since we want the LATEST/MOST COMPLETE, we put detailedTenders FIRST in the spread.
+        seen.add(uniqueId);
         return true;
     }).sort((a, b) => new Date(b.dateModified) - new Date(a.dateModified)).slice(0, 500);
 
-    // 4. Save
+    // 5. Save
     const dataDir = path.dirname(DATA_FILE);
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -93,7 +104,7 @@ async function updateTenders() {
         }, null, 2)
     );
 
-    console.log(`Success! Archive now contains ${finalTenders.length} tenders.`);
+    console.log(`Success! Archive sanitized and updated. Contains ${finalTenders.length} tenders.`);
 }
 
 updateTenders().catch(console.error);
