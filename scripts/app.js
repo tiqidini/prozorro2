@@ -1,4 +1,31 @@
 const API_BASE = 'https://public.api.openprocurement.org/api/2.5';
+const MILITARY_PRESETS = [
+    { code: '26613094', name: 'Військова частина А4533' },
+    { code: '08532943', name: 'ВІЙСЬКОВА ЧАСТИНА А1124' },
+    { code: '08151359', name: 'Військова частини А3074' },
+    { code: '08526931', name: 'Військова частина А1358' },
+    { code: '07666794', name: 'Військова частина А1119' },
+    { code: '08388245', name: 'військова частина А1201' },
+    { code: '07899653', name: 'Військова частина А1807' },
+    { code: '24981089', name: 'Військова частина А2192' },
+    { code: '08113718', name: 'військова частина А1915' },
+    { code: '08540730', name: 'Військова частина А0981' },
+    { code: '07944268', name: 'військова частина А0543' },
+    { code: '07893124', name: 'Військова частина А4559' },
+    { code: '24983059', name: 'Військова частина А1080' },
+    { code: '08140309', name: 'Військова частина А2920' },
+    { code: '08160039', name: 'Військова частина А1840' },
+    { code: '24979158', name: 'Військова частина А1912 МО України' },
+    { code: '08379186', name: 'Військова частина А2730' },
+    { code: '08032962', name: 'Військова частина А0153' },
+    { code: '14304637', name: 'Військова частина А3358' },
+    { code: '07732858', name: 'Військова частина А0598' },
+    { code: '08196534', name: 'Військова частина А2791' },
+    { code: '07967633', name: 'Військова частина А3476' },
+    { code: '08164155', name: 'Військова частина А2975' },
+    { code: '08027576', name: 'військова частина А2110' },
+    { code: '07644539', name: 'Військова частина А2756' }
+];
 
 class ProzorroApp {
     constructor() {
@@ -31,6 +58,8 @@ class ProzorroApp {
         this.searchResults = document.getElementById('search-results');
         this.watchlistItems = document.getElementById('watchlist-items');
         this.modal = document.getElementById('modal-container');
+        this.presetModal = document.getElementById('preset-modal');
+        this.presetList = document.getElementById('preset-list');
         this.searchBtn = document.getElementById('search-btn');
         this.searchInput = document.getElementById('search-input');
 
@@ -115,7 +144,7 @@ class ProzorroApp {
             this.modal.classList.remove('hidden');
         });
 
-        document.querySelector('.close-modal').addEventListener('click', () => {
+        document.querySelector('.close-modal-btn').addEventListener('click', () => {
             this.modal.classList.add('hidden');
         });
 
@@ -128,29 +157,28 @@ class ProzorroApp {
             }
         });
 
-        // Refresh
-        document.getElementById('refresh-btn').addEventListener('click', () => this.loadFeed());
-
-        // Military Preset
+        // Military Presets
         const milBtn = document.getElementById('add-military-preset-btn');
         if (milBtn) {
-            milBtn.addEventListener('click', async () => {
-                const codes = ["26613094", "08532943", "08151359", "08526931", "07666794", "08388245", "07899653", "24981089", "08113718", "08540730", "07944268", "07893124", "24983059", "08140309", "08160039", "24979158", "08379186", "08032962", "14304637", "07732858", "08196534", "07967633", "08164155", "08027576", "07644539"];
-
-                milBtn.disabled = true;
-                milBtn.innerText = 'Додавання...';
-
-                for (const c of codes) {
-                    await this.addToWatchlist(c, 'Військова частина/Орган');
-                }
-
-                await this.checkNewTendersGlobal(3);
-
-                milBtn.disabled = false;
-                milBtn.innerText = '+ Військові частини';
-                this.switchTab('watchlist');
-            });
+            milBtn.addEventListener('click', () => this.openPresetModal());
         }
+
+        document.querySelector('.close-preset-modal-btn').addEventListener('click', () => {
+            this.presetModal.classList.add('hidden');
+        });
+
+        document.getElementById('preset-select-all').addEventListener('click', () => {
+            this.presetList.querySelectorAll('input').forEach(i => i.checked = true);
+        });
+
+        document.getElementById('preset-deselect-all').addEventListener('click', () => {
+            this.presetList.querySelectorAll('input').forEach(i => i.checked = false);
+        });
+
+        document.getElementById('apply-preset-btn').addEventListener('click', () => {
+            this.applyPresets();
+            this.presetModal.classList.add('hidden');
+        });
 
         // Cache reset
         const clearBtn = document.getElementById('clear-cache-btn');
@@ -336,7 +364,7 @@ class ProzorroApp {
 
                 <div class="meta-footer">
                     <div class="entity-name">🏢 ${tender.procuringEntity?.name || 'Невідомий замовник'}</div>
-                    <div class="tender-date">📅 ${new Date(tender.dateModified).toLocaleDateString()} • ID: ${tender.tenderID}</div>
+                    <div class="tender-date">📅 ${new Date(tender.dateModified || Date.now()).toLocaleDateString()} • ID: ${tender.tenderID || '---'}</div>
                 </div>
             </div>
         `}).join('');
@@ -400,8 +428,37 @@ class ProzorroApp {
         }
     }
 
-    checkNewTendersInterval() {
-        setInterval(() => this.checkNewTendersGlobal(1), 1000 * 60 * 15);
+    openPresetModal() {
+        this.presetList.innerHTML = MILITARY_PRESETS.map(item => {
+            const isAdded = this.watchlist.some(w => w.code === item.code);
+            return `
+                <label class="preset-item">
+                    <input type="checkbox" value="${item.code}" ${isAdded ? 'checked' : ''} data-name="${item.name}">
+                    <div class="preset-item-info">
+                        <div class="preset-item-name">${item.name}</div>
+                        <div class="preset-item-code">${item.code}</div>
+                    </div>
+                </label>
+            `;
+        }).join('');
+        this.presetModal.classList.remove('hidden');
+    }
+
+    applyPresets() {
+        const checkboxes = this.presetList.querySelectorAll('input:checked');
+        const selected = Array.from(checkboxes).map(i => ({
+            code: i.value,
+            name: i.getAttribute('data-name')
+        }));
+
+        // Merge keeping others
+        const nonPresetWatchlist = this.watchlist.filter(w => !MILITARY_PRESETS.some(p => p.code === w.code));
+        this.watchlist = [...nonPresetWatchlist, ...selected];
+
+        localStorage.setItem('prozorro_watchlist', JSON.stringify(this.watchlist));
+        this.renderWatchlist();
+        this.loadFeed();
+        this.switchTab('feed');
     }
 }
 

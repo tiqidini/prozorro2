@@ -99,7 +99,8 @@
                 <div class="section-header">
                     <h2>Мої підписки</h2>
                     <div style="display:flex; gap:8px;">
-                        <button id="add-military-preset-btn" class="glass-btn" style="font-size:0.7rem; padding:4px 8px;">+ Військові частини</button>
+                        <button id="add-military-preset-btn" class="glass-btn"
+                            style="font-size:0.7rem; padding:4px 8px;">+ Військові частини</button>
                         <button id="add-watchlist-btn" class="plus-btn">+</button>
                     </div>
                 </div>
@@ -143,13 +144,32 @@
             <div class="modal glass">
                 <div class="modal-header">
                     <h3 id="modal-title">Додати замовника</h3>
-                    <button class="close-modal">&times;</button>
+                    <button class="close-modal-btn">&times;</button>
                 </div>
                 <div class="modal-body">
                     <input type="text" id="watchlist-code" placeholder="ЄДРПОУ замовника">
                     <input type="text" id="watchlist-name" placeholder="Назва (опціонально)">
                     <button id="save-watchlist-btn" class="primary-btn">Додати</button>
                 </div>
+            </div>
+        </div>
+
+        <div id="preset-modal" class="hidden">
+            <div class="modal glass" style="max-width: 500px; max-height: 80vh;">
+                <div class="modal-header">
+                    <h3>Вибір військових частин</h3>
+                    <button class="close-preset-modal-btn">&times;</button>
+                </div>
+                <div class="modal-body" style="overflow-y: auto;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+                        <button id="preset-select-all" class="glass-btn" style="font-size:0.7rem;">Вибрати всі</button>
+                        <button id="preset-deselect-all" class="glass-btn" style="font-size:0.7rem;">Зняти всі</button>
+                    </div>
+                    <div id="preset-list" class="preset-grid">
+                        <!-- Filling via JS -->
+                    </div>
+                </div>
+                <button id="apply-preset-btn" class="primary-btn" style="margin-top: 20px;">Застосувати вибір</button>
             </div>
         </div>
     </div>
