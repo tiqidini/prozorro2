@@ -30,6 +30,7 @@ const MILITARY_PRESETS = [
 class ProzorroApp {
     constructor() {
         this.watchlist = JSON.parse(localStorage.getItem('prozorro_watchlist')) || [];
+        this.lastSeenTimestamp = parseInt(localStorage.getItem('prozorro_last_seen')) || 0;
 
         // Migrate/Fix: Ensure all items have 'active' property
         let changed = false;
@@ -61,6 +62,11 @@ class ProzorroApp {
         this.initEvents();
         this.renderWatchlist();
         this.loadLocalData(); // New entry point
+
+        // Request notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
     }
 
     initElements() {
@@ -116,12 +122,15 @@ class ProzorroApp {
     formatProcedure(type) {
         const types = {
             'belowThreshold': 'Спрощена закупівля',
-            'aboveThresholdUA': 'Відкриті торги',
+            'aboveThreshold': 'Відкриті торги з особливостями',
+            'aboveThresholdUA': 'Відкриті торги з особливостями',
             'aboveThresholdEU': 'Відкриті торги (EU)',
             'reporting': 'Звіт про договір',
             'negotiation': 'Переговорна процедура',
+            'negotiation.quick': 'Переговорна процедура (швидка)',
             'omv': 'Спрощена закупівля',
-            'cpv': 'Запит цінових пропозицій'
+            'cpv': 'Запит цінових пропозицій',
+            'priceQuotation': 'Запит цінових пропозицій'
         };
         return types[type] || type;
     }
@@ -211,6 +220,12 @@ class ProzorroApp {
                 }
             });
         }
+
+        // Mark all as read
+        const readBtn = document.getElementById('mark-read-btn');
+        if (readBtn) {
+            readBtn.addEventListener('click', () => this.markAllAsRead());
+        }
     }
 
     switchTab(tabId) {
@@ -226,6 +241,7 @@ class ProzorroApp {
                 const data = await response.json();
                 this.tenders = data.tenders || [];
                 this.lastUpdated = data.lastUpdated;
+                this.checkNewAndNotify();
                 this.renderFeed();
                 this.updateStatusInfo();
             } else {
@@ -388,6 +404,7 @@ class ProzorroApp {
                 <div class="card-header">
                     <span class="status-tag ${tender.status.split('.')[0]}">${this.formatStatus(tender.status)}</span>
                     <span class="cpv-tag">📂 ${cpv}</span>
+                    ${new Date(tender.dateModified).getTime() > this.lastSeenTimestamp ? '<span class="new-tag">NEW</span>' : ''}
                 </div>
                 
                 <div class="title">${tender.title || 'Без назви (деталі на сайті)'}</div>
@@ -477,6 +494,50 @@ class ProzorroApp {
     updateBadge(count) {
         if ('setAppBadge' in navigator) {
             navigator.setAppBadge(count).catch(console.error);
+        }
+    }
+
+    checkNewAndNotify() {
+        const activeEdrpous = this.watchlist.filter(i => i.active).map(i => i.code);
+        const newTenders = this.tenders.filter(t => {
+            const edrpou = t.procuringEntity?.identifier?.id;
+            const isNew = new Date(t.dateModified).getTime() > this.lastSeenTimestamp;
+            return activeEdrpous.includes(edrpou) && isNew;
+        });
+
+        const count = newTenders.length;
+        this.updateBadge(count);
+
+        if (count > 0 && Notification.permission === 'granted') {
+            const lastTender = newTenders[0];
+            new Notification('Нові тендери!', {
+                body: `Знайдено ${count} нових закупівель. Остання: ${lastTender.title}`,
+                icon: './icons/icon-192x192.png'
+            });
+        }
+
+        // Update marker visibility
+        const markBtn = document.getElementById('mark-read-btn');
+        if (markBtn) markBtn.classList.toggle('hidden', count === 0);
+    }
+
+    markAllAsRead() {
+        this.lastSeenTimestamp = Date.now();
+        localStorage.setItem('prozorro_last_seen', this.lastSeenTimestamp);
+        this.updateBadge(0);
+        this.renderFeed();
+
+        const markBtn = document.getElementById('mark-read-btn');
+        if (markBtn) markBtn.classList.add('hidden');
+    }
+
+    updateBadge(count) {
+        if ('setAppBadge' in navigator) {
+            if (count > 0) {
+                navigator.setAppBadge(count).catch(console.error);
+            } else {
+                navigator.clearAppBadge().catch(console.error);
+            }
         }
     }
 
